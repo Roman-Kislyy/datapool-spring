@@ -29,3 +29,5 @@ HELP.md
 ###H2 DB ###
 *.mv.db
 *.trace.db
+/bin/*.mv.db
+/bin/*.trace.db

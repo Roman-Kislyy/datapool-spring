@@ -13,3 +13,15 @@ https://www.baeldung.com/spring-boot-h2-database
 
 http://www.h2database.com/html/tutorial.html#using_server
 https://www.tutorialspoint.com/h2_database/h2_database_create.htm
+
+#Build with maven
+
+mvn clean verify
+
+#Start service
+cd ./bin/
+java -jar datapool-service-1.0.0.jar
+
+#Configure
+
+./bin/application.properties

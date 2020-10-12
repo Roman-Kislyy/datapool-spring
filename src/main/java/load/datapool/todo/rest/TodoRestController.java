@@ -7,7 +7,6 @@ import com.opencsv.bean.MappingStrategy;
 import com.opencsv.exceptions.*;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
-import load.datapool.todo.PoolRow;
 import org.apache.commons.text.StringEscapeUtils;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.EmptyResultDataAccessException;
@@ -122,7 +121,7 @@ public final class TodoRestController {
                                           @RequestBody String text) {
         try {
             this.jdbcOperations.update("insert into " + env + "." + pool + "(rid, text, locked) values (nextval (?),?,?);", getSeqPrefix(env, pool) + "_max", text, false);
-            return ResponseEntity.ok(new PoolRow((long) 0, "Inserted", false));
+            return ResponseEntity.ok(new String((long) 0 +  " Inserted " + "false"));
         } catch (DataAccessException e) {
 
             if (isTableNotFound(((DataAccessException) e).getCause())) {
@@ -131,7 +130,7 @@ public final class TodoRestController {
                     return this.putData(env, pool, text);
                 }
             } else {
-                return ResponseEntity.badRequest().body(new PoolRow(e.getMessage()));
+                return ResponseEntity.badRequest().body(e.getMessage());
             }
         }
         return null;

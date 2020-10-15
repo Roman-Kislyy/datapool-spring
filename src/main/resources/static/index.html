@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Manual datapool service</title>
+</head>
+<body>
+<h1>Схема интеграции</h1>
+<p><img src="./schema.jpg" alt="" /></p>
+<h1></h1>
+<p></p>
+<nav class="toc">
+    <ul>
+        <li><a href="#UCs">Варианты использования</a></li>
+        <ul>
+            <li><a href="#CSVUpload">Загрузка csv файла</a></li>
+            <ul>
+                <li><a href="#CSVOverwrite">С пересозданием пула</a></li>
+                <li><a href="#CSVAppend">С добавлением данных</a></li>
+            </ul>
+            <li><a href="#Getnext">Чтение следующего значения из пула</a></li>
+            <ul><li><a href="#GetnextLock">С блокировкой</a></li>
+                <li><a href="#GetnextNoLock">Без блокировки</a></li></ul>
+            <li><a href="#PutOne">Сохранить одно значение</a></li>
+            <li><a href="#Unlock">Разблокировка записи</a></li>
+
+
+        </ul>
+        <li><a href="#JMXExample"> Пример в тест-плане Jmeter</a></li>
+        <li><a href="#Arch">Архитектура</a></li>
+        <ul><li><a href="#App">Сервер приложений</a></li>
+            <li><a href="#DB">База</a></li>
+        </ul>
+    </ul>
+</nav>
+<h1><a id="UCs"></a>Варианты использования</h1>
+<h2><a id="CSVUpload"></a>Загрузка csv файла</h2>
+<p><em>Примечания:</em></p>
+<ol>
+    <li>CSV файл в кодировке UTF-8</li>
+    <li>В файле должны быть заголовки, их имена будут использоваться при выдаче строк из пула (с сохранением регистра)</li>
+    <li>Количество полей в файле должно соответствовать количеству заголовков файла, в противном случае такие строки загружены не будут</li>
+</ol>
+<p>Количество полей и имена заголовков не зашиты в коде и может быть передано почти любое количество.</p>
+<h4><a id="CSVOverwrite"></a>С пересозданием пула</h4>
+<p>Если пул существует, он будет удален и создан заново.</p>
+<p>Запрос:</p>
+<blockquote>
+    <p><em><code>curl POSTcurl -F 'file=@test.csv' "http://localhost:8080/api/v1/upload-csv-as-json?env=load&amp;pool=demo_clients&amp;override=<strong>true</strong>"<br /></code></em></p>
+</blockquote>
+<h4><a id="CSVAppend"></a>С добавлением данных</h4>
+<p>Если пул существует, записи добавятся в конец текущего пула.</p>
+<p>Запрос:</p>
+<blockquote>
+    <p><code><em>curl POSTcurl -F 'file=@test.csv' "http://localhost:8080/api/v1/upload-csv-as-json?env=load&amp;pool=demo_clients&amp;override=<strong>false</strong>"<br /></em></code></p>
+</blockquote>
+<p>Файл выглядит примерно так</p>
+<p><img src="./csv-view-1.jpg" alt="" /></p>
+<h2><a id="Getnext"></a>Чтение следующего значения из пула</h2>
+<p><code>Метод&nbsp;<a href="http://localhost:8080/api/v1/get-next-value?pool=demo_clients&amp;locked=false">get-next-value</a>&nbsp;возвращает следующее значение из пула. Если пул подошел к концу, но в нем присутствуют не заблокированные записи, то чтение начнется сначала.</code></p>
+<h4><a id="GetnextLock"></a>С блокировкой</h4>
+<p>В данном случае на записи пула в БД ставится признак "locked" и она больше не будет отдаваться сервисом, пока признак не будет снят принудительно или пул не будет пересоздан заново.</p>
+<p>Например, это необходимо для организации пула данных, которые могут использоваться только один раз (номер карты, логин и пароль)</p>
+<p>Запрос:</p>
+<blockquote>
+    <p><em><code>curl <a href="http://localhost:8080/api/v1/get-next-value?pool=demo_clients&amp;locked=true">http://localhost:8080/api/v1/get-next-value?pool=demo_clients&amp;locked=true</a></code></em></p>
+</blockquote>
+<p>Ответ:</p>
+<blockquote>
+    <p><em><code>{"rid":1,"values":{"username":"Vasya","phone":"12345","age":"33"},"locked":true}</code></em></p>
+</blockquote>
+<p>Ответ содержит технические поля:</p>
+<ul>
+    <li>rid - уникальный номер строки в пуле</li>
+    <li>locked - состояние блокировки строки (true/false)</li>
+</ul>
+<p>В поле values передаются даные одной строки из csv файла. Имена атрибутов&nbsp; соответствуют именам заголовков csv на момент загрузки файла</p>
+<h4><a id="GetnextNoLock"></a>Без блокировки</h4>
+<p>Запрос:</p>
+<blockquote>
+    <p><em><code>curl <a href="http://localhost:8080/api/v1/get-next-value?pool=demo_clients&amp;locked=false">http://localhost:8080/api/v1/get-next-value?pool=demo_clients&amp;locked=false</a></code></em></p>
+</blockquote>
+<p>Ответ:</p>
+<blockquote>
+    <p><em><code>{"rid":1,"values":{"rid":3,"values":{"username":"Lena","phone":"4545455","age":"202023"},"locked":false}</code></em></p>
+</blockquote>
+<h2><a id="PutOne"></a>Сохранить одно значение</h2>
+<p>Метод&nbsp;put-value.</p>
+<p>В отличие от загрузки csv файла, данный метод не проверяет заголовки или формат. Всё тело post запроса сохраняется в БД без изменения и возвращается так без изменения.</p>
+<p>Рекомендуется сохранять значение в Json виде.</p>
+<blockquote>
+    <p>Например, такой вид более удобен в дальнейшем {"applicationNumber":"23331234", "state":"input_data"}</p>
+</blockquote>
+<p>, чем</p>
+<blockquote>
+    <p>23331234,input_data</p>
+</blockquote>
+<p>Пример запроса:</p>
+<blockquote>
+    <p><code>curl -XPOST 'http://localhost:8080/api/v1/put-value?pool=demo_put_clients' -H 'Content-Type: application/json' -d '{"applicationNumber":"2333132345555", "state":"input_data2"}'</code></p>
+</blockquote>
+<p>Пример ответа (get-next-val):</p>
+<blockquote>
+    <p><code>{"rid":1,"values":{"applicationNumber":"2333132345555", "state":"input_data2"},"locked":false}</code></p>
+</blockquote>
+<h2><a id="Unlock"></a>Разблокировка записи</h2>
+<p>Метод /<span>unlock разблокирует запись пула по номеру rid.</span></p>
+<p><span>&lt;Не реализовано&gt;</span></p>
+<h2><a id="JMXExample"></a>Пример использования в тест-плане Jmeter</h2>
+<p>Текущий пример в файле &lt;repo&gt;\src\test\test.jmx</p>
+<p>Версия jmx предварительная и будет улучшена.</p>
+<p></p>
+<h1><a id="Arch"></a>Архитектура</h1>
+<h2><a id="App"></a>Сервер приложений</h2>
+<p>Использован spring rest api</p>
+<h2><a id="DB"></a>База данных</h2>
+<p><a href="http://www.h2database.com/html/tutorial.html#using_server">H2 DB</a></p>
+<p>Запуск возможен в трех вариантах:</p>
+<ol>
+    <li>В памяти процесса java, тогда при рестарте сервиса все пулы удалятся</li>
+    <li>База пишется в файл, при рестарте не удаляется. Инстанс H2 db поднимается автоматически из jar, при необходимости можно подключиться напрямую в БД</li>
+    <li>H2 db можно поднять отдельно, как Postgres и подобные.</li>
+</ol>
+<p>В данной реализации используется второй вариант.</p>
+<p>Включен через application.properties настройкой <em>"spring.datasource.url=jdbc:h2:file:./testdb"</em></p>
+</body>
+</html>

@@ -12,10 +12,10 @@
 
     <groupId>load.datapool</groupId>
     <artifactId>datapool-service</artifactId>
-    <version>1.0.0</version>
+    <version>1.1.0</version>
     <packaging>jar</packaging>
     <name>datapool-service</name>
-    <description>Demo project for Spring Boot</description>
+    <description>Datapool service </description>
 
     <properties>
         <java.version>8</java.version>

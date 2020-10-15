@@ -32,3 +32,7 @@ java -jar datapool-service-1.0.0.jar
 # Configure
 
 ./bin/application.properties
+
+# Documentation
+
+./src/main/resources/static/index.html

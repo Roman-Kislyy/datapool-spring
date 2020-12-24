@@ -31,6 +31,7 @@
         <ul><li><a href="#App">Сервер приложений</a></li>
             <li><a href="#DB">База</a></li>
         </ul>
+        <li><a href="#Monitor">Мониторинг для Prometheus</a></li>
     </ul>
 </nav>
 <h1><a id="UCs"></a>Варианты использования</h1>
@@ -123,5 +124,55 @@
 </ol>
 <p>В данной реализации используется второй вариант.</p>
 <p>Включен через application.properties настройкой <em>"spring.datasource.url=jdbc:h2:file:./testdb"</em></p>
+<h1><a id="Monitor"></a>Мониторинг для Prometheus</h1>
+<p>Есть следующие метрики:</p>
+<ol>
+    <li>datapool_total_rows - всего строк в пуле (заблокированные и не заблокированные)</li>
+    <li>datapool_current_offset - текущее положение курсора (значение sequence)</li>
+    <li>datapool_available_rows - количество не заблокированных (unlocked) строк в пуле. Считается тяжелыми select count(), нужна оптимизация.</li>
+</ol>
+
+<h4>Минимальные метрики (всего строк, текущая позиция курсора, не считает разблокированные строки)</h4>
+<p>Запрос:</p>
+<blockquote>
+    <p><em><code>curl <a href="http://localhost:8080/metrics">http://localhost:8080/metrics</a></code></em></p>
+</blockquote>
+<p>Ответ:</p>
+<blockquote>
+    <p><em><code>
+        # HELP datapool_current_offset Current sequence position.
+        # TYPE datapool_current_offset gauge
+
+        datapool_current_offset{host="DESKTOP-TE8GD6E",port="0",environment="LOAD",name="UC03_CLIENTS",} 8936.0
+        # HELP datapool_total_rows Total rows count.
+        # TYPE datapool_total_rows gauge
+
+        datapool_total_rows{host="DESKTOP-TE8GD6E",port="0",environment="LOAD",name="UC03_CLIENTS",} 211736.0</code></em></p>
+</blockquote>
+
+<h4>Полные метрики (всего строк в пуле, текущая позиция курсора, количество разблокированных строк)</h4>
+<p>Запрос:</p>
+<blockquote>
+    <p><em><code>curl <a href="http://localhost:8080/metrics?calculateUnlocks=true">http://localhost:8080/metrics?calculateUnlocks=true</a></code></em></p>
+</blockquote>
+<p>Ответ:</p>
+<blockquote>
+    <p><em><code>
+        # HELP datapool_current_offset Current sequence position.
+        # TYPE datapool_current_offset gauge
+
+        datapool_current_offset{host="DESKTOP-TE8GD6E",port="0",environment="LOAD",name="UC03_CLIENTS",} 9080.0
+
+        # HELP datapool_total_rows Total rows count.
+        # TYPE datapool_total_rows gauge
+
+        datapool_total_rows{host="DESKTOP-TE8GD6E",port="0",environment="LOAD",name="UC03_CLIENTS",} 211736.0
+
+        # HELP datapool_available_rows Available no locked rows count.
+        # TYPE datapool_available_rows gauge
+
+
+        datapool_available_rows{host="DESKTOP-TE8GD6E",port="0",environment="LOAD",name="UC03_CLIENTS",} 209847.0</code></em></p>
+</blockquote>
 </body>
 </html>

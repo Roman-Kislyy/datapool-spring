@@ -5,6 +5,7 @@ import com.opencsv.bean.CsvToBean;
 import com.opencsv.bean.CsvToBeanBuilder;
 import com.opencsv.bean.MappingStrategy;
 import com.opencsv.exceptions.*;
+import load.datapool.db.H2DataSourse;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.text.StringEscapeUtils;
@@ -12,6 +13,7 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcOperations;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -27,7 +29,7 @@ import java.util.regex.Pattern;
 
 @RestController
 @RequestMapping("api/v1")
-@RequiredArgsConstructor
+//@RequiredArgsConstructor
 public final class TodoRestController {
 
     @NonNull
@@ -38,6 +40,10 @@ public final class TodoRestController {
     private int maxIndexLength = 25;
     private int retryGetNextMaxCount = 999999;
     private int seqCycleCache = 5;
+
+    public TodoRestController() {
+        jdbcOperations = new JdbcTemplate(new H2DataSourse().getDataSource());
+    }
 
     @GetMapping(path = "/get-next-value")
     public ResponseEntity<String> getNextData(@RequestParam(value = "env", defaultValue = "load") String env,

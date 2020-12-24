@@ -39,7 +39,9 @@ public class Exporter {
     private String host = "undefined";
 
     @Value(value = "${server.port:1}")
-    private int port=11;
+    private int port;
+    static private long nextCalulationTime = 0;
+    static private long calculationDelay = 15000; //15 sec
 
     private final JdbcOperations jdbcOperations;
     public boolean isCalcAVRows = false; //getAvailableRows
@@ -52,11 +54,12 @@ public class Exporter {
         } catch (UnknownHostException e) {
             System.err.println("Failed to get host name");
         }
-        System.out.println ("Port = " + port);
     }
 
     public String getMetrics() throws IOException {
-        this.setMetrics();
+        if (nextCalulationTime < System.currentTimeMillis() ) {
+            this.setMetrics();
+        }
         Writer writer = new StringWriter();
         TextFormat.write004(writer, c.metricFamilySamples() );
         return writer.toString();
@@ -89,6 +92,7 @@ public class Exporter {
                         ((Long) row.get ("row_count")).intValue(),getAvailableRows ((String) row.get ("table_schema"),  (String) row.get ("table_name")),
                         ((Long) row.get ("current_value")).intValue());
             }
+            nextCalulationTime = System.currentTimeMillis() + calculationDelay;
         } catch (EmptyResultDataAccessException e){
         }
     }

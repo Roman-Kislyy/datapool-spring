@@ -16,7 +16,7 @@ public class H2DataSourse extends DriverManagerDataSource {
         return new PropertySourcesPlaceholderConfigurer();
     }
     //@Value("jdbc:h2:file:./testdb")//:jdbc:h2:file:./testdb
-    private String url ="jdbc:h2:file:./testdb";
+    private String url ="jdbc:h2:file:./testdb;LOG=0;CACHE_SIZE=1048576;LOCK_MODE=0;UNDO_LOG=0;PAGE_SIZE=512";
 
     //@Value(value = "${spring.datasource.driverClassName}")
     private String driver = "org.h2.Driver";
@@ -35,7 +35,7 @@ public class H2DataSourse extends DriverManagerDataSource {
         dataSource.setUrl(url);
         dataSource.setUsername(user);
         dataSource.setPassword(pwd);
-
+        
     }
     public DriverManagerDataSource getDataSource (){
         return this.dataSource;

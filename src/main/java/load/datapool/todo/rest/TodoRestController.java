@@ -22,6 +22,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.Reader;
+import java.sql.ResultSet;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.regex.Matcher;
@@ -38,8 +39,10 @@ public final class TodoRestController {
     private int retryGetNextCount = 0;// retry if skip seq
     private int maxSequenceLength = 25;
     private int maxIndexLength = 25;
+    private int maxKeyColumnLength = 1500;
     private int retryGetNextMaxCount = 999999;
     private int seqCycleCache = 5;
+
 
     public TodoRestController() {
         jdbcOperations = new JdbcTemplate(new H2DataSourse().getDataSource());
@@ -47,8 +50,8 @@ public final class TodoRestController {
 
     @GetMapping(path = "/get-next-value")
     public ResponseEntity<String> getNextData(@RequestParam(value = "env", defaultValue = "load") String env,
-                                               @RequestParam(value = "pool", defaultValue = "testpool") String pool,
-                                               @RequestParam(value = "locked", defaultValue = "false") boolean locked) {
+                                              @RequestParam(value = "pool", defaultValue = "testpool") String pool,
+                                              @RequestParam(value = "locked", defaultValue = "false") boolean locked) {
         Long sq = (long) -1;
         extErrText = "";
 
@@ -75,10 +78,10 @@ public final class TodoRestController {
                 if (retryGetNextCount >= retryGetNextMaxCount) {
                     retryGetNextCount = 0;
                     return ResponseEntity.badRequest().body(new String(e.getMessage()+ "\\\n"
-                                                            + extErrText
-                                                            + "\\\n Datapool may be empty."
-                                                            + "\\\n Very often reset sequense: " + retryGetNextCount
-                                                            + " for " + env +"." + pool + " last value = " + sq));
+                            + extErrText
+                            + "\\\n Datapool may be empty."
+                            + "\\\n Very often reset sequense: " + retryGetNextCount
+                            + " for " + env +"." + pool + " last value = " + sq));
                 }
                 retryGetNextCount = retryGetNextCount +1;
                 return this.getNextData(env, pool, locked);
@@ -89,13 +92,13 @@ public final class TodoRestController {
         }
     }
 
-   synchronized private boolean fixSequenceState(String env, String pool, Long currentValue) {
+    synchronized private boolean fixSequenceState(String env, String pool, Long currentValue) {
         if (currentValue < 0) return false; //Some undefined sequence error
         try {
             Long sqMax = this.jdbcOperations.queryForObject("SELECT nvl(max (rid), 0) FROM " + env + "." +pool + "  where rid >= ? and locked != true", new Object[]{currentValue}, Long.class); //Is exist values forward
             Long newSqValue = (long)0;
             if (sqMax == 0 ) //Need reset sequence to start, no values forward
-                // You can change for sequence CYCLE type if slow puts are planing
+            // You can change for sequence CYCLE type if slow puts are planing
             {
                 newSqValue = this.jdbcOperations.queryForObject("SELECT nvl(min (rid),0) FROM " + env + "." +pool + " where rid > 0 and locked != true",  Long.class);
                 if (newSqValue == 0)
@@ -124,16 +127,21 @@ public final class TodoRestController {
     @PostMapping(path = "/put-value")
     public ResponseEntity<Object> putData(@RequestParam(value = "env", defaultValue = "load") String env,
                                           @RequestParam(value = "pool", defaultValue = "testpool") String pool,
+                                          @RequestParam(value = "search-key", defaultValue = "") String searchKey,
                                           @RequestBody String text) {
         try {
-            this.jdbcOperations.update("insert into " + env + "." + pool + "(rid, text, locked) values (nextval (?),?,?);", getSeqPrefix(env, pool) + "_max", text, false);
-            return ResponseEntity.ok(new String((long) 0 +  " Inserted " + "false"));
+            if (searchKey.equals("")) {//No
+                this.jdbcOperations.update("insert into " + env + "." + pool + "(rid, text, locked) values (nextval (?),?,?);", getSeqPrefix(env, pool) + "_max", text, false);
+            }else{
+                this.jdbcOperations.update("insert into " + env + "." + pool + "(rid, text, searchkey, locked) values (nextval (?),?,?,?);", getSeqPrefix(env, pool) + "_max", text, searchKey,false);
+            }
+            return ResponseEntity.ok(new String((long) 1 +  " Inserted:" + "locked = false; searchKey = " + searchKey) );
         } catch (DataAccessException e) {
 
             if (isTableNotFound(((DataAccessException) e).getCause())) {
-                if (createTable(env, pool)) {
+                if (createTable(env, pool,searchKey)) {
                     System.out.println("Table " + env + "." + pool + " created!");
-                    return this.putData(env, pool, text);
+                    return this.putData(env, pool, text,searchKey);
                 }
             } else {
                 return ResponseEntity.badRequest().body(e.getMessage());
@@ -147,13 +155,48 @@ public final class TodoRestController {
 
         return null;
     }
+    @GetMapping(path = "/search-by-key")
+    public ResponseEntity<String> getBySearchKey(@RequestParam(value = "env", defaultValue = "load") String env,
+                                              @RequestParam(value = "pool", defaultValue = "testpool") String pool,
+                                              @RequestParam(value = "search-key", defaultValue = "") String searchKey,
+                                              @RequestParam(value = "locked", defaultValue = "false") boolean locked) {
+        Long sq = (long) -1;
+        extErrText = "";
+        if (searchKey.equals("")){
+            return ResponseEntity.badRequest().body(new String("Undefined request parameter \"search-key\"."));
+        }
+        try {
+            final Long[] rid = {null};
+            ResponseEntity<String> res = ResponseEntity.ok(this.jdbcOperations.queryForObject(
+                                "select rid, text,searchkey, locked from " + env + "." + pool + " where searchkey = ? and locked = false limit 1",
+                    (resultSet, i) -> {
+                        rid[0] = resultSet.getLong("rid");
+                        return new String("{\"rid\":" + resultSet.getLong("rid") +
+                                ",\"searchkey\":" + resultSet.getString("searchkey") +
+                                ",\"values\":" + resultSet.getString("text") +
+                                ",\"locked\":" + locked +"}");
+                        }
+                        ,searchKey));
+
+            if (locked) {
+                System.out.println("Try update locked value.");
+                this.jdbcOperations.update("update " + env + "." + pool + " set locked = true where  rid = ? and locked = false;", rid[0]);
+            }
+            return res;
+
+        } catch (EmptyResultDataAccessException  e) {
+            return ResponseEntity.badRequest().body(new String(e.getMessage()+ "\\\n" + extErrText+ "\\\n ERROR " + env +"." + pool + " searchkey = " + searchKey));
+        } catch (DataAccessException e) {
+            return ResponseEntity.badRequest().body(new String(e.getMessage()+ "\\\n" + extErrText+ "\\\n ERROR " + env +"." + pool + " searchkey = " + searchKey));
+        }
+    }
 
     @PostMapping(path = "/upload-csv-as-json")
     public ResponseEntity<String> uploadCSV(@RequestParam(value = "env", defaultValue = "load") String env,
-                                         @RequestParam(value = "pool", defaultValue = "testpool") String pool,
-                                         @RequestParam(value = "override", defaultValue = "false") boolean override,
-                                         @RequestParam(value = "with-headers", defaultValue = "true") boolean withHeaders,
-                                         @RequestParam("file") MultipartFile file){
+                                            @RequestParam(value = "pool", defaultValue = "testpool") String pool,
+                                            @RequestParam(value = "override", defaultValue = "false") boolean override,
+                                            @RequestParam(value = "with-headers", defaultValue = "true") boolean withHeaders,
+                                            @RequestParam("file") MultipartFile file){
         String delim = ",";
         if (!withHeaders) {
             return ResponseEntity.badRequest().body(new String ("With out headers csv files not supported!"));
@@ -171,17 +214,17 @@ public final class TodoRestController {
         String notValidRows = "";
         try {
             reader = new BufferedReader(new InputStreamReader(file.getInputStream()));
-          String header = reader.readLine();
-          if (header == null){
-              return ResponseEntity.badRequest().body(new String ("Not found rows into file!"));
-          }
-          int cntColumns = header.split (delim).length;
-          String headers[] = header.split (delim);
+            String header = reader.readLine();
+            if (header == null){
+                return ResponseEntity.badRequest().body(new String ("Not found rows into file!"));
+            }
+            int cntColumns = header.split (delim).length;
+            String headers[] = header.split (delim);
 
-          String line = reader.readLine();
+            String line = reader.readLine();
 
-          String json = "";
-          int successCnt = 0;
+            String json = "";
+            int successCnt = 0;
             while (line != null) {
                 String values [] = line.split (delim);
                 if (values.length != cntColumns){
@@ -209,7 +252,7 @@ public final class TodoRestController {
         } catch (Exception ex) {
             return ResponseEntity.badRequest().body(new String ("File parse exeption: " + ex.getMessage() + "\n" + notValidRows));
         }
-         //return ResponseEntity.ok().body(new String ("Ok!"));
+        //return ResponseEntity.ok().body(new String ("Ok!"));
     }
 
     private String getSeqPrefix(String env, String pool) {
@@ -219,6 +262,9 @@ public final class TodoRestController {
     }
 
     private boolean createTable(String env, String pool) {
+        return createTable(env,pool,"");
+    }
+    private boolean createTable(String env, String pool, String searchKey) {
         boolean res = false;
         try {
             this.jdbcOperations.execute("" +
@@ -226,12 +272,14 @@ public final class TodoRestController {
                     "(" +
                     "        rid           bigint primary key," +
                     "        text        varchar(32000)," +
+                    "        searchkey        varchar(" + maxKeyColumnLength + ")," +
                     "        locked         boolean   not null default false" +
                     ");");
             String indexPrefix = new String("idx_" + env + "" + pool);
             indexPrefix = indexPrefix.substring(0, indexPrefix.length() <= maxIndexLength ? indexPrefix.length() : maxIndexLength);
             this.jdbcOperations.execute("CREATE INDEX " + indexPrefix + "_rid ON  " + env + "." + pool + " (rid);");
             this.jdbcOperations.execute("CREATE INDEX " + indexPrefix + "_lc ON  " + env + "." + pool + " (locked);");
+            this.jdbcOperations.execute("CREATE INDEX " + indexPrefix + "_sk ON  " + env + "." + pool + " (searchkey);");
 
 
             this.jdbcOperations.execute("DROP SEQUENCE if exists " + getSeqPrefix(env, pool) + "_max;");

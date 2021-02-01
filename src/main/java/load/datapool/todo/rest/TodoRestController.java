@@ -172,7 +172,7 @@ public final class TodoRestController {
                     (resultSet, i) -> {
                         rid[0] = resultSet.getLong("rid");
                         return new String("{\"rid\":" + resultSet.getLong("rid") +
-                                ",\"searchkey\":" + resultSet.getString("searchkey") +
+                                ",\"searchkey\":\"" + resultSet.getString("searchkey") + "\"" +
                                 ",\"values\":" + resultSet.getString("text") +
                                 ",\"locked\":" + locked +"}");
                         }

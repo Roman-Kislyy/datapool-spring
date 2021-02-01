@@ -141,7 +141,7 @@ public final class TodoRestController {
             if (isTableNotFound(((DataAccessException) e).getCause())) {
                 if (createTable(env, pool,searchKey)) {
                     System.out.println("Table " + env + "." + pool + " created!");
-                    return this.putData(env, pool, text,searchKey);
+                    return this.putData(env, pool,searchKey, text);
                 }
             } else {
                 return ResponseEntity.badRequest().body(e.getMessage());

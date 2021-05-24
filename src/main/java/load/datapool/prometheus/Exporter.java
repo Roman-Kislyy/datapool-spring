@@ -45,7 +45,7 @@ public class Exporter {
     static final Counter latency = Counter.build()
             .name("datapool_sum_latency")
             .labelNames(labelNamesExt)
-            .help("Self response time (nano sec). Sum for requests by method").register(c);
+            .help("Self response time (micro sec). Sum for requests by method").register(c);
 
     static final Counter requestsCount = Counter.build()
             .name("datapool_requests_count")

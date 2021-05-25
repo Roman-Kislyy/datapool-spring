@@ -182,7 +182,7 @@
     <li>datapool_current_offset - текущее положение курсора (значение sequence)</li>
     <li>datapool_available_rows - количество не заблокированных (unlocked) строк в пуле. Считается тяжелыми select count(), нужна оптимизация.</li>
     <li>datapool_requests_count - количество вызовов каждого изметодов сервиса (с момента старта). Counter.</li>
-    <li>datapool_sum_latency - Сумма по времени ответа (rest api методов, сумма в микросекундах). Не включает в себя время передачи по сети и установку соединений. Counter.</li>
+    <li>datapool_sum_latency - Сумма времени ответов (rest api методов, сумма в микросекундах). Не включает в себя время передачи по сети и установку соединений. Counter.</li>
     <li>datapool_sum_latency/datapool_requests_count - Среднее время ответа (rest api методов)</li>
 </ol>
 

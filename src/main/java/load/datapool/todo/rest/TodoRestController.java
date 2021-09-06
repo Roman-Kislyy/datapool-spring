@@ -1,30 +1,18 @@
 package load.datapool.todo.rest;
 
-import com.opencsv.CSVReader;
-import com.opencsv.bean.CsvToBean;
-import com.opencsv.bean.CsvToBeanBuilder;
-import com.opencsv.bean.MappingStrategy;
-import com.opencsv.exceptions.*;
 import load.datapool.db.H2DataSourse;
+import load.datapool.prometheus.Exporter;
 import lombok.NonNull;
-import lombok.RequiredArgsConstructor;
-import org.apache.commons.text.StringEscapeUtils;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcOperations;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-
 import java.io.BufferedReader;
-import java.io.IOException;
 import java.io.InputStreamReader;
-import java.io.Reader;
-import java.sql.ResultSet;
-import java.util.List;
-import java.util.ListIterator;
+import java.time.Instant;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -40,8 +28,10 @@ public final class TodoRestController {
     private int maxSequenceLength = 25;
     private int maxIndexLength = 25;
     private int maxKeyColumnLength = 1500;
+    private int maxLengthNotValidRows = 25000;//Max length wrong lines for response
     private int retryGetNextMaxCount = 999999;
     private int seqCycleCache = 5;
+    private Exporter exp = new Exporter();
 
 
     public TodoRestController() {
@@ -52,6 +42,8 @@ public final class TodoRestController {
     public ResponseEntity<String> getNextData(@RequestParam(value = "env", defaultValue = "load") String env,
                                               @RequestParam(value = "pool", defaultValue = "testpool") String pool,
                                               @RequestParam(value = "locked", defaultValue = "false") boolean locked) {
+        Instant start = Instant.now();
+        exp.increaseRequests(env,pool,"get-next-value");
         Long sq = (long) -1;
         extErrText = "";
 
@@ -67,7 +59,7 @@ public final class TodoRestController {
                 this.jdbcOperations.update("update " + env + "." + pool + " set locked = true where  rid = ? and locked = false;", sq);
                 //locked = true;
             }
-
+            exp.increaseLatency(env,pool,"get-next-value", start);
             return res;
 
         } catch (EmptyResultDataAccessException  e) {
@@ -77,6 +69,7 @@ public final class TodoRestController {
                 System.out.println("Sequence reseted " + env +"." + pool + " last value = " + sq + ". Retry count = " + retryGetNextCount);
                 if (retryGetNextCount >= retryGetNextMaxCount) {
                     retryGetNextCount = 0;
+                    exp.increaseLatency(env,pool,"get-next-value", start);
                     return ResponseEntity.badRequest().body(new String(e.getMessage()+ "\\\n"
                             + extErrText
                             + "\\\n Datapool may be empty."
@@ -84,10 +77,13 @@ public final class TodoRestController {
                             + " for " + env +"." + pool + " last value = " + sq));
                 }
                 retryGetNextCount = retryGetNextCount +1;
+                exp.increaseLatency(env,pool,"get-next-value", start);
                 return this.getNextData(env, pool, locked);
             }
+            exp.increaseLatency(env,pool,"get-next-value", start);
             return ResponseEntity.badRequest().body(new String(e.getMessage()+ "\\\n" + extErrText+ "\\\n ERROR " + env +"." + pool + " sequence = " + sq));
         } catch (DataAccessException e) {
+            exp.increaseLatency(env,pool,"get-next-value", start);
             return ResponseEntity.badRequest().body(new String(e.getMessage()+ "\\\n" + extErrText+ "\\\n ERROR " + env +"." + pool));
         }
     }
@@ -129,12 +125,15 @@ public final class TodoRestController {
                                           @RequestParam(value = "pool", defaultValue = "testpool") String pool,
                                           @RequestParam(value = "search-key", defaultValue = "") String searchKey,
                                           @RequestBody String text) {
+        Instant start = Instant.now();
+        exp.increaseRequests(env,pool,"put-value");
         try {
             if (searchKey.equals("")) {//No
                 this.jdbcOperations.update("insert into " + env + "." + pool + "(rid, text, locked) values (nextval (?),?,?);", getSeqPrefix(env, pool) + "_max", text, false);
             }else{
                 this.jdbcOperations.update("insert into " + env + "." + pool + "(rid, text, searchkey, locked) values (nextval (?),?,?,?);", getSeqPrefix(env, pool) + "_max", text, searchKey,false);
             }
+            exp.increaseLatency(env,pool,"put-value", start);
             return ResponseEntity.ok(new String((long) 1 +  " Inserted:" + "locked = false; searchKey = " + searchKey) );
         } catch (DataAccessException e) {
 
@@ -144,25 +143,70 @@ public final class TodoRestController {
                     return this.putData(env, pool,searchKey, text);
                 }
             } else {
+                exp.increaseLatency(env,pool,"put-value", start);
                 return ResponseEntity.badRequest().body(e.getMessage());
             }
         }
         return null;
     }
 
-    @GetMapping(path = "/unlock")
-    public ResponseEntity<String> unlockData(){
+    @PostMapping(path = "/unlock")
+    public ResponseEntity<String> unlockData(@RequestParam(value = "env", defaultValue = "load") String env,
+                                             @RequestParam(value = "pool", defaultValue = "testpool") String pool,
+                                             @RequestParam(value = "rid", defaultValue = "-1")  String sRid,
+                                             @RequestParam(value = "search-key", defaultValue = "")  String searchKey,
+                                             @RequestParam(value = "unlock-all", defaultValue = "false") boolean unlockAll)
+    {
+        Instant start = Instant.now();
+        exp.increaseRequests(env,pool,"unlock");
+        Long rid;
 
-        return null;
+        //Check rid valid value
+        try {
+           rid = Long.parseLong(sRid.trim());  //<-- String to long here
+        } catch (NumberFormatException nfe) {
+            exp.increaseLatency(env,pool,"unlock", start);
+            return ResponseEntity.badRequest().body(new String(nfe.getMessage()+ "\\\n" + extErrText+ "\\\n ERROR " + env +"." + pool));
+        }
+
+        try {
+            if (unlockAll) {
+                this.jdbcOperations.update("update " + env + "." + pool + " set locked = false where locked is null; update " + env + "." + pool + " set locked = false where locked =true;"); //Fast variant
+            }else {
+                if (!sRid.equals("-1")) {
+                    this.jdbcOperations.update("update " + env + "." + pool + " set locked = false where rid = ?", rid.longValue());
+                } else {
+                    if (!searchKey.equals("")){
+                        this.jdbcOperations.update("update " + env + "." + pool + " set locked = false where searchkey = ?", searchKey);
+                    }
+                    else {
+                        exp.increaseLatency(env,pool,"unlock", start);
+                        return ResponseEntity.badRequest().body(new String("You must define one of the parameters variant:\n"
+                                                                            + "\t&unlock-all=true \n"
+                                                                            + "\t&rid=<row number> \n"
+                                                                            + "\t&search-key=<key value>"));
+                    }
+                }
+            }
+
+        } catch (DataAccessException e) {
+            exp.increaseLatency(env,pool,"unlock", start);
+            return ResponseEntity.badRequest().body(new String(e.getMessage()+ "\\\n" + extErrText+ "\\\n ERROR " + env +"." + pool));
+        }
+        exp.increaseLatency(env,pool,"unlock", start);
+        return ResponseEntity.ok(new String("Unlock successfully!") );
     }
     @GetMapping(path = "/search-by-key")
     public ResponseEntity<String> getBySearchKey(@RequestParam(value = "env", defaultValue = "load") String env,
                                               @RequestParam(value = "pool", defaultValue = "testpool") String pool,
                                               @RequestParam(value = "search-key", defaultValue = "") String searchKey,
                                               @RequestParam(value = "locked", defaultValue = "false") boolean locked) {
+        Instant start = Instant.now();
+        exp.increaseRequests(env,pool,"search-by-key");
         Long sq = (long) -1;
         extErrText = "";
         if (searchKey.equals("")){
+            exp.increaseLatency(env,pool,"search-by-key", start);
             return ResponseEntity.badRequest().body(new String("Undefined request parameter \"search-key\"."));
         }
         try {
@@ -171,6 +215,7 @@ public final class TodoRestController {
                                 "select rid, text,searchkey, locked from " + env + "." + pool + " where searchkey = ? and locked = false limit 1",
                     (resultSet, i) -> {
                         rid[0] = resultSet.getLong("rid");
+                        exp.increaseLatency(env,pool,"search-by-key", start);
                         return new String("{\"rid\":" + resultSet.getLong("rid") +
                                 ",\"searchkey\":\"" + resultSet.getString("searchkey") + "\"" +
                                 ",\"values\":" + resultSet.getString("text") +
@@ -182,11 +227,14 @@ public final class TodoRestController {
                 System.out.println("Try update locked value.");
                 this.jdbcOperations.update("update " + env + "." + pool + " set locked = true where  rid = ? and locked = false;", rid[0]);
             }
+            exp.increaseLatency(env,pool,"search-by-key", start);
             return res;
 
         } catch (EmptyResultDataAccessException  e) {
+            exp.increaseLatency(env,pool,"search-by-key", start);
             return ResponseEntity.badRequest().body(new String(e.getMessage()+ "\\\n" + extErrText+ "\\\n ERROR " + env +"." + pool + " searchkey = " + searchKey));
         } catch (DataAccessException e) {
+            exp.increaseLatency(env,pool,"search-by-key", start);
             return ResponseEntity.badRequest().body(new String(e.getMessage()+ "\\\n" + extErrText+ "\\\n ERROR " + env +"." + pool + " searchkey = " + searchKey));
         }
     }
@@ -197,15 +245,20 @@ public final class TodoRestController {
                                             @RequestParam(value = "override", defaultValue = "false") boolean override,
                                             @RequestParam(value = "with-headers", defaultValue = "true") boolean withHeaders,
                                             @RequestParam("file") MultipartFile file){
+        Instant start = Instant.now();
+        exp.increaseRequests(env,pool,"upload-csv-as-json");
         String delim = ",";
         if (!withHeaders) {
+            exp.increaseLatency(env,pool,"upload-csv-as-json", start);
             return ResponseEntity.badRequest().body(new String ("With out headers csv files not supported!"));
         }
         if (file.isEmpty()) {
+            exp.increaseLatency(env,pool,"upload-csv-as-json", start);
             return ResponseEntity.badRequest().body(new String ("File is empty!"));
         }
         if (override){
             if (!dropTable(env, pool) || !createTable(env, pool)){
+                exp.increaseLatency(env,pool,"upload-csv-as-json", start);
                 return ResponseEntity.badRequest().body(new String ("Some problem when trying to clean table " +env + "." + pool));
             }
         }
@@ -216,6 +269,7 @@ public final class TodoRestController {
             reader = new BufferedReader(new InputStreamReader(file.getInputStream()));
             String header = reader.readLine();
             if (header == null){
+                exp.increaseLatency(env,pool,"upload-csv-as-json", start);
                 return ResponseEntity.badRequest().body(new String ("Not found rows into file!"));
             }
             int cntColumns = header.split (delim).length;
@@ -227,7 +281,7 @@ public final class TodoRestController {
             int successCnt = 0;
             while (line != null) {
                 String values [] = line.split (delim);
-                if (values.length != cntColumns){
+                if (values.length != cntColumns && notValidRows.length() < maxLengthNotValidRows){
                     notValidRows += line + "\n";
                 }else {
                     json = "{";
@@ -246,10 +300,13 @@ public final class TodoRestController {
             }
             reader.close();
             if (!notValidRows.equals("")){
-                return ResponseEntity.badRequest().body(new String ("Success uploaded rows: " + successCnt + ". Wrong parse some lines:\n" + notValidRows));
+                exp.increaseLatency(env,pool,"upload-csv-as-json", start);
+                return ResponseEntity.badRequest().body(new String ("Success uploaded rows: " + successCnt + ". Wrong parse some lines:\n" + notValidRows.substring(0, Math.min(notValidRows.length(), maxLengthNotValidRows))));
             }
+            exp.increaseLatency(env,pool,"upload-csv-as-json", start);
             return ResponseEntity.ok().body(new String ("Ok! Uploaded rows: " + successCnt));
         } catch (Exception ex) {
+            exp.increaseLatency(env,pool,"upload-csv-as-json", start);
             return ResponseEntity.badRequest().body(new String ("File parse exeption: " + ex.getMessage() + "\n" + notValidRows));
         }
         //return ResponseEntity.ok().body(new String ("Ok!"));

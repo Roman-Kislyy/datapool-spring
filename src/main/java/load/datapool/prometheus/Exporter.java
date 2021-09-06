@@ -1,6 +1,7 @@
 package load.datapool.prometheus;
 
 import io.prometheus.client.CollectorRegistry;
+import io.prometheus.client.Counter;
 import io.prometheus.client.Gauge;
 import io.prometheus.client.exporter.common.TextFormat;
 import load.datapool.db.H2DataSourse;
@@ -13,6 +14,9 @@ import java.io.StringWriter;
 import java.io.Writer;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -21,6 +25,8 @@ public class Exporter {
     // Prometheus collectors
     static final CollectorRegistry c = new CollectorRegistry();
     static private String [] labelNames= new String [] {"host", "port", "environment","name"};
+    static private String [] labelNamesExt= new String [] {"host", "port", "environment","name","method"};
+
     static final Gauge availableRows = Gauge.build()
             .name("datapool_available_rows")
             .labelNames(labelNames)
@@ -35,6 +41,17 @@ public class Exporter {
             .name("datapool_current_offset")
             .labelNames(labelNames)
             .help("Current sequence position.").register(c);
+
+    static final Counter latency = Counter.build()
+            .name("datapool_sum_latency")
+            .labelNames(labelNamesExt)
+            .help("Self response time (micro sec). Sum for requests by method").register(c);
+
+    static final Counter requestsCount = Counter.build()
+            .name("datapool_requests_count")
+            .labelNames(labelNamesExt)
+            .help("Count read values requests").register(c);
+
     //Other attributes
     private String host = "undefined";
 
@@ -96,7 +113,15 @@ public class Exporter {
         } catch (EmptyResultDataAccessException e){
         }
     }
+    public void increaseRequests(String env, String pool,String method){  //+1 increment got get requests metric
+        requestsCount.labels(new String [] {host,String.valueOf(port),env,pool,method }).inc();
+    }
 
+    public void increaseLatency(String env, String pool, String method, Instant start){  //Save response time
+        Instant end = Instant.now();
+        Duration timeElapsed = Duration.between(start, end);
+        latency.labels(new String [] {host,String.valueOf(port),env,pool,method }).inc(timeElapsed.toNanos()/1000 );
+    }
     private int getAvailableRows (String schema, String pool){
         if (!isCalcAVRows) return -1;
         return ((Long)this.jdbcOperations.queryForObject("SELECT COUNT (locked) FROM " + schema + "." +pool + "  where locked != true", Long.class)).intValue();

@@ -1,16 +1,18 @@
 package load.datapool.db;
 
+import org.apache.commons.dbcp2.BasicDataSource;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.PropertySource;
 import org.springframework.context.support.PropertySourcesPlaceholderConfigurer;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
+
+import org.springframework.jdbc.datasource.embedded.ConnectionProperties;
 import org.springframework.stereotype.Component;
 
 //@Configuration
 //@PropertySource("classpath:application.properties") //Dont work
-public class H2DataSourse extends DriverManagerDataSource {
+public class H2DataSourse extends BasicDataSource {
     @Bean
     public static PropertySourcesPlaceholderConfigurer propertyConfigInDev() {
         return new PropertySourcesPlaceholderConfigurer();
@@ -27,17 +29,19 @@ public class H2DataSourse extends DriverManagerDataSource {
     //@Value(value = "${spring.datasource.password}")
     private String pwd ="password";
 
-    private DriverManagerDataSource dataSource;
+    private BasicDataSource dataSource;
 
     public H2DataSourse (){
-        dataSource = new DriverManagerDataSource();
+        dataSource = new BasicDataSource();
         dataSource.setDriverClassName(driver);
         dataSource.setUrl(url);
         dataSource.setUsername(user);
         dataSource.setPassword(pwd);
+        dataSource.setMaxIdle(100);
+
         
     }
-    public DriverManagerDataSource getDataSource (){
+    public BasicDataSource getDataSource (){
         return this.dataSource;
     }
 }

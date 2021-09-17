@@ -1,6 +1,7 @@
 package load.datapool.todo.rest;
 
 import load.datapool.prometheus.Exporter;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -15,6 +16,10 @@ import java.nio.charset.StandardCharsets;
 @RestController
 @RequestMapping("/")
 public class RootController {
+
+    @Autowired
+    private Exporter exp;
+
     @GetMapping(path = "/")
     public ModelAndView getIndex(){
         return new ModelAndView("index.html");
@@ -26,7 +31,6 @@ public class RootController {
 
     @GetMapping(path = "/metrics")
     public ResponseEntity<String>  getMetrics(@RequestParam(value = "calculateUnlocks", defaultValue = "false") boolean calculateUnlocks) throws IOException {
-        Exporter exp = new Exporter();
         exp.isCalcAVRows = calculateUnlocks;
         ResponseEntity<String> res =
                 ResponseEntity.ok()

@@ -98,31 +98,54 @@ public class BaseLockerService implements LockerService {
 
     @Override
     public void putPool(String pool, int size) {
-        lockers.put(handlePoolName(pool), new BaseLocker(pool, size));
+        pool = handlePoolName(pool);
+        lockers.put(pool, new BaseLocker(pool, size));
     }
 
     @Override
     public void deletePool(String pool) {
-        lockers.remove(handlePoolName(pool));
+        pool = handlePoolName(pool);
+        lockers.remove(pool);
     }
 
     @Override
     public void lock(String pool, int rid) {
-        lockers.get(handlePoolName(pool)).lock(rid);
+        pool = handlePoolName(pool);
+        jdbcOperations.update("update " + pool + " set locked = true where  rid = ? and locked = false;", rid);
+        lockers.get(pool).lock(rid);
     }
 
     @Override
     public void unlock(String pool, int rid) {
-        lockers.get(handlePoolName(pool)).unlock(rid);
+        pool = handlePoolName(pool);
+        jdbcOperations.update("update " + pool + " set locked = false where rid = ?", rid);
+        lockers.get(pool).unlock(rid);
+    }
+
+    @Override
+    public void unlock(String pool, String searchKey) {
+        pool = handlePoolName(pool);
+        jdbcOperations.update("update " + pool + " set locked = false where searchkey = ?", searchKey);
+        Integer rid = jdbcOperations.queryForObject("SELECT rid FROM " + pool + " WHERE searchkey = ? limit 1", Integer.class, searchKey);
+        if(rid != null) lockers.get(pool).unlock(rid);
+    }
+
+    @Override
+    public void unlockAll(String pool) {
+        pool = handlePoolName(pool);
+        jdbcOperations.update("update " + pool + " set locked = false where locked is null; update " + pool + " set locked = false where locked =true;"); //Fast variant
+        lockers.get(pool).unlockAll();
     }
 
     @Override
     public int firstUnlockRid(String pool) {
-        return lockers.get(handlePoolName(pool)).firstUnlockId();
+        pool = handlePoolName(pool);
+        return lockers.get(pool).firstUnlockId();
     }
 
     @Override
     public int firstBiggerUnlockedId(String pool, int id) {
-        return lockers.get(handlePoolName(pool)).firstBiggerUnlockedId(id);
+        pool = handlePoolName(pool);
+        return lockers.get(pool).firstBiggerUnlockedId(id);
     }
 }

@@ -2,6 +2,8 @@ package load.datapool.service;
 
 import lombok.Getter;
 
+import java.util.Arrays;
+
 @Getter
 public class BaseLocker implements Locker {
 
@@ -26,6 +28,11 @@ public class BaseLocker implements Locker {
     }
 
     @Override
+    public void unlockAll() {
+        Arrays.fill(lockList, false);
+    }
+
+    @Override
     public int firstUnlockId() {
         for (int i = startIndex; i < lockList.length; i++) {
             if (!lockList[i]) {     // not locked
@@ -43,4 +50,5 @@ public class BaseLocker implements Locker {
         }
         return 0;
     }
+
 }

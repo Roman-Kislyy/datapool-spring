@@ -55,22 +55,24 @@ public final class TodoRestController {
         Long sq = -1L;
         extErrText = "";
 
+        String fullPoolName = fullPoolName(env, pool);
+
         try {
             sq = jdbcOperations.queryForObject("select nextval (?)", new String[]{getSeqPrefix(env, pool) + "_rid"}, Long.class);
-            ResponseEntity<String> res = ResponseEntity.ok(jdbcOperations.queryForObject("select rid, text, locked from " + env + "." + pool + " where rid = ? and locked = false limit 1",
+            ResponseEntity<String> res = ResponseEntity.ok(jdbcOperations.queryForObject("select rid, text, locked from " + fullPoolName + " where rid = ? and locked = false limit 1",
                     (resultSet, i) ->
                             new String("{\"rid\":" + resultSet.getLong("rid") +
                                     ",\"values\":" + resultSet.getString("text") +
                                     ",\"locked\":" + locked + "}"), sq));
             if (locked) {
-                this.jdbcOperations.update("update " + env + "." + pool + " set locked = true where  rid = ? and locked = false;", sq);
+                lockerService.lock(fullPoolName, sq.intValue());
             }
             exp.increaseLatency(env, pool, "get-next-value", start);
             return res;
 
         } catch (EmptyResultDataAccessException e) {
             if (fixSequenceState(env, pool, sq)) {
-                System.out.println("Sequence reseted " + env + "." + pool + " last value = " + sq + ". Retry count = " + retryGetNextCount);
+                System.out.println("Sequence reseted " + fullPoolName + " last value = " + sq + ". Retry count = " + retryGetNextCount);
                 if (retryGetNextCount >= retryGetNextMaxCount) {
                     retryGetNextCount = 0;
                     exp.increaseLatency(env, pool, "get-next-value", start);
@@ -93,7 +95,7 @@ public final class TodoRestController {
     }
 
     synchronized private boolean fixSequenceState(String env, String pool, Long currentValue) {
-        String fullPullName = env + "." + pool;
+        String fullPullName = fullPoolName(env, pool);
         if (currentValue < 0) return false; //Some undefined sequence error
         try {
 //            long operation
@@ -170,6 +172,7 @@ public final class TodoRestController {
         Instant start = Instant.now();
         exp.increaseRequests(env, pool, "unlock");
         Long rid;
+        String fullPullName = fullPoolName(env, pool);
 
         //Check rid valid value
         try {
@@ -181,13 +184,13 @@ public final class TodoRestController {
 
         try {
             if (unlockAll) {
-                this.jdbcOperations.update("update " + env + "." + pool + " set locked = false where locked is null; update " + env + "." + pool + " set locked = false where locked =true;"); //Fast variant
+                lockerService.unlockAll(fullPullName);
             } else {
                 if (!sRid.equals("-1")) {
-                    this.jdbcOperations.update("update " + env + "." + pool + " set locked = false where rid = ?", rid.longValue());
+                    lockerService.unlock(fullPullName, rid.intValue());
                 } else {
                     if (!searchKey.equals("")) {
-                        this.jdbcOperations.update("update " + env + "." + pool + " set locked = false where searchkey = ?", searchKey);
+                        lockerService.unlock(fullPullName, searchKey);
                     } else {
                         exp.increaseLatency(env, pool, "unlock", start);
                         return ResponseEntity.badRequest().body(new String("You must define one of the parameters variant:\n"
@@ -221,6 +224,8 @@ public final class TodoRestController {
         }
         try {
             final Long[] rid = {null};
+            Instant dd = Instant.now();
+            // todo - долгий запрос!!!
             ResponseEntity<String> res = ResponseEntity.ok(this.jdbcOperations.queryForObject(
                     "select rid, text,searchkey, locked from " + env + "." + pool + " where searchkey = ? and locked = false limit 1",
                     (resultSet, i) -> {
@@ -235,14 +240,11 @@ public final class TodoRestController {
 
             if (locked) {
                 System.out.println("Try update locked value.");
-                this.jdbcOperations.update("update " + env + "." + pool + " set locked = true where  rid = ? and locked = false;", rid[0]);
+                lockerService.lock(fullPoolName(env, pool), rid[0].intValue());
             }
             exp.increaseLatency(env, pool, "search-by-key", start);
             return res;
 
-        } catch (EmptyResultDataAccessException e) {
-            exp.increaseLatency(env, pool, "search-by-key", start);
-            return ResponseEntity.badRequest().body(new String(e.getMessage() + "\\\n" + extErrText + "\\\n ERROR " + env + "." + pool + " searchkey = " + searchKey));
         } catch (DataAccessException e) {
             exp.increaseLatency(env, pool, "search-by-key", start);
             return ResponseEntity.badRequest().body(new String(e.getMessage() + "\\\n" + extErrText + "\\\n ERROR " + env + "." + pool + " searchkey = " + searchKey));
@@ -390,5 +392,9 @@ public final class TodoRestController {
             return true;
         }
         return false;
+    }
+
+    private String fullPoolName(String env, String pool) {
+        return env + "." + pool;
     }
 }

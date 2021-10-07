@@ -36,11 +36,13 @@ public class BaseLocker implements Locker {
 
     @Override
     public void lock(int id) {
+        id-= startIndex;
         list[id] = true;
     }
 
     @Override
     public void unlock(int id) {
+        id-= startIndex;
         list[id] = false;
     }
 

@@ -5,6 +5,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Service
 public class BaseLockerService implements LockerService {
@@ -24,11 +25,13 @@ public class BaseLockerService implements LockerService {
     public void initLocks() {
         System.out.println("Init start");
         try {
-            final String selectSchemas = "SHOW SCHEMAS";
-            List<Map<String, Object>> schemas = jdbcOperations.queryForList(selectSchemas);
+            List<Map<String, Object>> schemas = showSchemas();
             schemas.forEach(map -> map.forEach((key, value) -> {
                 if (!systemSchemas.contains(value.toString())) {
-                    selectTables(value.toString());
+                    final String schema = value.toString();
+                    selectTables(schema).forEach(tableName -> {
+                        selectLocksFromTable(schema, tableName);
+                    });
                 }
             }));
         } catch (Exception e) {
@@ -37,13 +40,15 @@ public class BaseLockerService implements LockerService {
         System.out.println("Init finish");
     }
 
-    private void selectTables(String schema) {
+    private List<Map<String, Object>> showSchemas() {
+        final String selectSchemas = "SHOW SCHEMAS";
+        return jdbcOperations.queryForList(selectSchemas);
+    }
+
+    private List<String> selectTables(String schema) {
         final String selectTables = "SELECT TABLE_NAME FROM information_schema.tables where table_schema = ?";
         final String[] args = new String[]{schema};
-        jdbcOperations.queryForList(selectTables, args, String.class)
-                .forEach(tableName -> {
-                    selectLocksFromTable(schema, tableName);
-                });
+        return jdbcOperations.queryForList(selectTables, args, String.class);
     }
 
     private void selectLocksFromTable(String schema, String tableName) {
@@ -97,6 +102,27 @@ public class BaseLockerService implements LockerService {
     }
 
     @Override
+    public boolean poolExist(String pool) {
+        final int trueNum = 1;
+        AtomicInteger exist = new AtomicInteger(0);
+        try {
+            List<Map<String, Object>> schemas = showSchemas();
+            schemas.forEach(map -> map.forEach((key, value) -> {
+                if (!systemSchemas.contains(value.toString())) {
+                    final String schema = value.toString();
+                    selectTables(schema).forEach(tableName -> {
+                        if (tableName.equalsIgnoreCase(pool))
+                            exist.set(trueNum);
+                    });
+                }
+            }));
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return exist.get() == trueNum;
+    }
+
+    @Override
     public void putPool(String pool, int size) {
         pool = handlePoolName(pool);
         lockers.put(pool, new BaseLocker(pool, size));
@@ -106,6 +132,15 @@ public class BaseLockerService implements LockerService {
     public void deletePool(String pool) {
         pool = handlePoolName(pool);
         lockers.remove(pool);
+    }
+
+    @Override
+    public void add(String pool) {
+        pool = handlePoolName(pool);
+        if (!lockers.containsKey(pool)) {
+            lockers.put(pool, new BaseLocker(pool));
+        }
+        lockers.get(pool).add();
     }
 
     @Override

@@ -13,6 +13,8 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -30,6 +32,7 @@ public final class TodoRestController {
     private Exporter exp;
     @Autowired
     private LockerService lockerService;
+
     private String extErrText = ""; //Extended error cause
     private int retryGetNextCount = 0;// retry if skip seq
     private int maxSequenceLength = 25;
@@ -72,17 +75,27 @@ public final class TodoRestController {
 
         } catch (EmptyResultDataAccessException e) {
             if (fixSequenceState(env, pool, sq)) {
-                System.out.println("Sequence reseted " + fullPoolName + " last value = " + sq + ". Retry count = " + retryGetNextCount);
-                if (retryGetNextCount >= retryGetNextMaxCount) {
-                    retryGetNextCount = 0;
-                    exp.increaseLatency(env, pool, "get-next-value", start);
-                    return ResponseEntity.badRequest().body(new String(e.getMessage() + "\\\n"
-                            + extErrText
-                            + "\\\n Datapool may be empty."
-                            + "\\\n Very often reset sequense: " + retryGetNextCount
-                            + " for " + env + "." + pool + " last value = " + sq));
-                }
-                retryGetNextCount = retryGetNextCount + 1;
+                System.out.println("Sequence reseted " + fullPoolName + " last value = " + sq
+//                        + ". Retry count = " + retryGetNextCount
+                );
+
+                /*
+                todo так как контроллер - это бин, а бин - синглтон, то retryGetNextCount считает сумму рестартов по всем пулам без разбора.
+                Также тут не учитываются временные промежутки.
+                Таким образом, мы просто шлём badRequest без явных оснований.
+                Пока вырезаю эту фичу.
+                 */
+
+//                if (retryGetNextCount >= retryGetNextMaxCount) {
+//                    retryGetNextCount = 0;
+//                    exp.increaseLatency(env, pool, "get-next-value", start);
+//                    return ResponseEntity.badRequest().body(new String(e.getMessage() + "\\\n"
+//                            + extErrText
+//                            + "\\\n Datapool may be empty."
+//                            + "\\\n Very often reset sequense: " + retryGetNextCount
+//                            + " for " + env + "." + pool + " last value = " + sq));
+//                }
+//                retryGetNextCount++;
                 exp.increaseLatency(env, pool, "get-next-value", start);
                 return getNextData(env, pool, locked);
             }
@@ -146,10 +159,10 @@ public final class TodoRestController {
             } else {
                 this.jdbcOperations.update("insert into " + env + "." + pool + "(rid, text, searchkey, locked) values (nextval (?),?,?,?);", getSeqPrefix(env, pool) + "_max", text, searchKey, false);
             }
+            lockerService.add(fullPoolName(env, pool));
             exp.increaseLatency(env, pool, "put-value", start);
             return ResponseEntity.ok(new String((long) 1 + " Inserted:" + "locked = false; searchKey = " + searchKey));
         } catch (DataAccessException e) {
-
             if (isTableNotFound(((DataAccessException) e).getCause())) {
                 if (createTable(env, pool, searchKey)) {
                     System.out.println("Table " + env + "." + pool + " created!");
@@ -260,6 +273,8 @@ public final class TodoRestController {
         Instant start = Instant.now();
         exp.increaseRequests(env, pool, "upload-csv-as-json");
         String delim = ",";
+        final String fullPoolName = fullPoolName(env, pool);
+
         if (!withHeaders) {
             exp.increaseLatency(env, pool, "upload-csv-as-json", start);
             return ResponseEntity.badRequest().body(new String("With out headers csv files not supported!"));
@@ -269,7 +284,9 @@ public final class TodoRestController {
             return ResponseEntity.badRequest().body(new String("File is empty!"));
         }
         if (override) {
-            if (!dropTable(env, pool) || !createTable(env, pool)) {
+            if (dropTable(env, pool) || createTable(env, pool)) {
+               lockerService.deletePool(fullPoolName);
+            } else {
                 exp.increaseLatency(env, pool, "upload-csv-as-json", start);
                 return ResponseEntity.badRequest().body(new String("Some problem when trying to clean table " + env + "." + pool));
             }
@@ -277,6 +294,11 @@ public final class TodoRestController {
         // parse CSV file
         BufferedReader reader = null;
         String notValidRows = "";
+
+        if (!lockerService.poolExist(pool)) {
+            createTable(env, pool);
+        }
+
         try {
             reader = new BufferedReader(new InputStreamReader(file.getInputStream()));
             String header = reader.readLine();
@@ -313,6 +335,9 @@ public final class TodoRestController {
                 line = reader.readLine();
             }
             reader.close();
+
+            lockerService.putPool(fullPoolName, successCnt);
+
             if (!notValidRows.equals("")) {
                 exp.increaseLatency(env, pool, "upload-csv-as-json", start);
                 return ResponseEntity.badRequest().body(new String("Success uploaded rows: " + successCnt + ". Wrong parse some lines:\n" + notValidRows.substring(0, Math.min(notValidRows.length(), maxLengthNotValidRows))));

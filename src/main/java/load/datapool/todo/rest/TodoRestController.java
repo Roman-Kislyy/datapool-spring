@@ -167,6 +167,11 @@ public final class TodoRestController {
                                           @RequestBody String text) {
         Instant start = Instant.now();
         exp.increaseRequests(env, pool, "put-value");
+
+        if (!lockerService.poolExist(env, pool)) {
+            createTable(env, pool);
+        }
+
         try {
             if (searchKey.equals("")) {//No
                 this.jdbcOperations.update("insert into " + env + "." + pool + "(rid, text, locked) values (nextval (?),?,?);", getSeqPrefix(env, pool) + "_max", text, false);

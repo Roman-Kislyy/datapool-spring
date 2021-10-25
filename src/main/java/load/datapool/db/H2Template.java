@@ -1,10 +1,8 @@
 package load.datapool.db;
 
 import org.apache.commons.dbcp2.BasicDataSource;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.support.PropertySourcesPlaceholderConfigurer;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.stereotype.Component;
 import org.springframework.stereotype.Repository;
 
 @Repository
@@ -20,8 +18,11 @@ public class H2Template extends JdbcTemplate {
     //@Value(value = "${spring.datasource.username:sa}")
     private String user ="sa";
 
-    //@Value(value = "${spring.datasource.password}")
+//    @Value(value = "${spring.datasource.password}")
     private String pwd ="password";
+
+    @Value("${h2.maxIdle}")
+    private int maxIdle;
 
     public H2Template(){
         BasicDataSource dataSource = new BasicDataSource();
@@ -29,7 +30,11 @@ public class H2Template extends JdbcTemplate {
         dataSource.setUrl(url);
         dataSource.setUsername(user);
         dataSource.setPassword(pwd);
-        dataSource.setMaxIdle(100);
+        dataSource.setMaxIdle(maxIdle);
         setDataSource(dataSource);
+    }
+
+    public void init() {
+        System.out.println(maxIdle);
     }
 }

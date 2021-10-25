@@ -2,6 +2,7 @@ package load.datapool.service;
 
 import load.datapool.db.H2Template;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 
@@ -15,6 +16,10 @@ public class BaseLockerService implements LockerService {
     private static final List<String> systemSchemas = Arrays.asList("INFORMATION_SCHEMA", "PUBLIC");
     private final HashMap<String, Locker> lockers = new HashMap<>();
     private final char delimiter = '.';
+
+    @Value("${lockerService.batchRows}")
+    private int batchRows;
+
     @Autowired
     private H2Template jdbcOperations;
 
@@ -78,7 +83,7 @@ public class BaseLockerService implements LockerService {
             if (lockedRows.equals(0))
                 return;
 
-            final int batchRows = 10000;
+//            final int batchRows = 10000;
             final String selectRids = "SELECT rid FROM " + fullTableName + " WHERE rid > ? AND locked = true limit ?";
             final Object[] args = new Object[]{0, batchRows};
             final int ridIndex = 1;

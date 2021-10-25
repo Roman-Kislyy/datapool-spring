@@ -2,10 +2,12 @@ package load.datapool.service;
 
 import load.datapool.db.H2Template;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.logging.Logger;
 
 @Service
 public class BaseLockerService implements LockerService {
@@ -59,29 +61,38 @@ public class BaseLockerService implements LockerService {
 
     private void selectLocksFromTable(String schema, String tableName) {
         final String fullTableName = TableService.fullName(schema, tableName);
-        System.out.println("Table: " + fullTableName);
+        System.out.println("Locker scan table: " + fullTableName);
 
-        if (!containsLockedColumn(schema, tableName))
-            return;
+        try {
+            if (!containsLockedColumn(schema, tableName))
+                return;
 
-        Locker locker = new BaseLocker(fullTableName, maxRid(fullTableName));
-        lockers.put(fullTableName, locker);
+            Integer maxRid = maxRid(fullTableName);
+            if (maxRid == null)
+                return;
 
-        final Integer lockedRows = lockedRows(fullTableName);
-        if (lockedRows.equals(0))
-            return;
+            Locker locker = new BaseLocker(fullTableName, maxRid);
+            lockers.put(fullTableName, locker);
 
-        final int batchRows = 10000;
-        final String selectRids = "SELECT rid FROM " + fullTableName + " WHERE rid > ? AND locked = true limit ?";
-        final Object[] args = new Object[]{0, batchRows};
-        final int ridIndex = 1;
+            final Integer lockedRows = lockedRows(fullTableName);
+            if (lockedRows.equals(0))
+                return;
 
-        for (int rows = lockedRows; rows > 0; rows -= batchRows) {
-            List<Integer> rids = jdbcOperations.queryForList(selectRids, args, Integer.class);
-            rids.forEach(locker::lock);
-            args[ridIndex] = rids.get(rids.size() - 1);
+            final int batchRows = 10000;
+            final String selectRids = "SELECT rid FROM " + fullTableName + " WHERE rid > ? AND locked = true limit ?";
+            final Object[] args = new Object[]{0, batchRows};
+            final int ridIndex = 1;
+
+            for (int rows = lockedRows; rows > 0; rows -= batchRows) {
+                List<Integer> rids = jdbcOperations.queryForList(selectRids, args, Integer.class);
+                rids.forEach(locker::lock);
+                args[ridIndex] = rids.get(rids.size() - 1);
+            }
+            System.out.println("\tLockedRows: " + lockedRows);
+        } catch (Exception e) {
+            System.err.println("\tError scan table:" + fullTableName);
+            e.printStackTrace();
         }
-        System.out.println("LockedRows: " + lockedRows);
     }
 
     private boolean containsLockedColumn(String schema, String tableName) {

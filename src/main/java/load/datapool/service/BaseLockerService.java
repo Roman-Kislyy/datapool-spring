@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 
+import javax.annotation.PostConstruct;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Logger;
@@ -24,13 +25,12 @@ public class BaseLockerService implements LockerService {
     private H2Template jdbcOperations;
 
     public BaseLockerService() {
-        jdbcOperations = new H2Template();
-        initLocks();
-        jdbcOperations = null;
     }
 
+    @PostConstruct
     @Override
     public void initLocks() {
+        System.out.println(jdbcOperations);
         System.out.println("Init start");
         try {
             List<String> schemas = showSchemas();

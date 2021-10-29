@@ -1,6 +1,8 @@
 package load.datapool.service;
 
 import load.datapool.db.H2Template;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataAccessException;
@@ -9,29 +11,31 @@ import org.springframework.stereotype.Service;
 import javax.annotation.PostConstruct;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.logging.Logger;
 
 @Service
 public class BaseLockerService implements LockerService {
 
+    private final Logger logger = LoggerFactory.getLogger(BaseLockerService.class);
+
     private static final List<String> systemSchemas = Arrays.asList("INFORMATION_SCHEMA", "PUBLIC");
     private final HashMap<String, Locker> lockers = new HashMap<>();
-    private final char delimiter = '.';
 
-    @Value("${lockerService.batchRows}")
-    private int batchRows;
+    private final H2Template jdbcOperations;
+    private final TableService tableService;
+    private final int batchRows;
 
     @Autowired
-    private H2Template jdbcOperations;
-
-    public BaseLockerService() {
+    public BaseLockerService(H2Template jdbcOperations, TableService tableService,
+                             @Value("${lockerService.batchRows}") int batchRows) {
+        this.jdbcOperations = jdbcOperations;
+        this.tableService = tableService;
+        this.batchRows = batchRows;
     }
 
     @PostConstruct
     @Override
     public void initLocks() {
-        System.out.println(jdbcOperations);
-        System.out.println("Init start");
+        logger.info("Init start");
         try {
             List<String> schemas = showSchemas();
             schemas.forEach(schema -> {
@@ -42,7 +46,7 @@ public class BaseLockerService implements LockerService {
         } catch (Exception e) {
             e.printStackTrace();
         }
-        System.out.println("Init finish");
+        logger.info("Init finish");
     }
 
     private List<String> showSchemas() {
@@ -65,11 +69,11 @@ public class BaseLockerService implements LockerService {
     }
 
     private void selectLocksFromTable(String schema, String tableName) {
-        final String fullTableName = TableService.fullName(schema, tableName);
-        System.out.println("Locker scan table: " + fullTableName);
+        final String fullTableName = tableService.fullName(schema, tableName);
+        logger.info("Locker scan table: " + fullTableName);
 
         try {
-            if (!containsLockedColumn(schema, tableName))
+            if (!containsColumns(schema, tableName))
                 return;
 
             Integer maxRid = maxRid(fullTableName);
@@ -93,19 +97,35 @@ public class BaseLockerService implements LockerService {
                 rids.forEach(locker::lock);
                 args[ridIndex] = rids.get(rids.size() - 1);
             }
-            System.out.println("\tLockedRows: " + lockedRows);
+            logger.info("\tLockedRows: " + lockedRows);
         } catch (Exception e) {
-            System.err.println("\tError scan table:" + fullTableName);
-            e.printStackTrace();
+            logger.error("Error scan table:" + fullTableName, e);
         }
+    }
+
+    private boolean containsColumns(String schema, String tableName) {
+        return containsRidColumn(schema, tableName) &&
+                containsLockedColumn(schema, tableName);
     }
 
     private boolean containsLockedColumn(String schema, String tableName) {
         final String lockedColumn = "LOCKED";
+        return containsColumn(schema, tableName, lockedColumn);
+    }
+
+    private boolean containsRidColumn(String schema, String tableName) {
+        final String lockedColumn = "RID";
+        return containsColumn(schema, tableName, lockedColumn);
+    }
+
+    private boolean containsColumn(String schema, String tableName, String column) {
         final String selectColumns = "SELECT count(column_name) FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = ? AND table_name = ? AND column_name = ?";
-        final String[] args = new String[]{schema, tableName, lockedColumn};
+        final String[] args = new String[]{schema, tableName, column};
         Integer lockedColNum = jdbcOperations.queryForObject(selectColumns, args, Integer.class);
-        return lockedColNum > 0;
+        boolean contain = lockedColNum != null && lockedColNum > 0;
+        if (!contain)
+            logger.error("Table " + tableService.fullName(schema, tableName) + "not contain " + column + " column");
+        return contain;
     }
 
     private Integer lockedRows(String fullTableName) {
@@ -115,11 +135,10 @@ public class BaseLockerService implements LockerService {
 
     private Integer maxRid(String fullTableName) {
         final String selectMaxRid = "SELECT max(rid) FROM " + fullTableName;
-        return jdbcOperations.queryForObject(selectMaxRid, Integer.class);
-    }
-
-    private String handlePoolName(String env, String pool) {
-        return (env + delimiter + pool).toUpperCase();
+        Integer maxRid = jdbcOperations.queryForObject(selectMaxRid, Integer.class);
+        if (maxRid == null)
+            logger.error("Table " + fullTableName + ": not found maxRid");
+        return maxRid;
     }
 
     @Override
@@ -143,45 +162,45 @@ public class BaseLockerService implements LockerService {
 
     @Override
     public void putPool(String env, String pool) {
-        pool = handlePoolName(env, pool);
+        pool = tableService.fullName(env, pool);
         lockers.put(pool, new BaseLocker(pool));
     }
 
     @Override
     public void putPool(String env, String pool, int size) {
-        pool = handlePoolName(env, pool);
+        pool = tableService.fullName(env, pool);
         lockers.put(pool, new BaseLocker(pool, size));
     }
 
     @Override
     public void deletePool(String env, String pool) {
-        pool = handlePoolName(env, pool);
+        pool = tableService.fullName(env, pool);
         lockers.remove(pool);
     }
 
     @Override
     public void add(String env, String pool) {
-        pool = handlePoolName(env, pool);
+        pool = tableService.fullName(env, pool);
         lockers.get(pool).add();
     }
 
     @Override
     public void lock(String env, String pool, int rid) {
-        pool = handlePoolName(env, pool);
+        pool = tableService.fullName(env, pool);
         jdbcOperations.update("update " + pool + " set locked = true where  rid = ? and locked = false;", rid);
         lockers.get(pool).lock(rid);
     }
 
     @Override
     public void unlock(String env, String pool, int rid) {
-        pool = handlePoolName(env, pool);
+        pool = tableService.fullName(env, pool);
         jdbcOperations.update("update " + pool + " set locked = false where rid = ?", rid);
         lockers.get(pool).unlock(rid);
     }
 
     @Override
     public void unlock(String env, String pool, String searchKey) {
-        pool = handlePoolName(env, pool);
+        pool = tableService.fullName(env, pool);
         jdbcOperations.update("update " + pool + " set locked = false where searchkey = ?", searchKey);
         Integer rid = jdbcOperations.queryForObject("SELECT rid FROM " + pool + " WHERE searchkey = ? limit 1", Integer.class, searchKey);
         if (rid != null) lockers.get(pool).unlock(rid);
@@ -189,20 +208,20 @@ public class BaseLockerService implements LockerService {
 
     @Override
     public void unlockAll(String env, String pool) {
-        pool = handlePoolName(env, pool);
+        pool = tableService.fullName(env, pool);
         jdbcOperations.update("update " + pool + " set locked = false where locked is null; update " + pool + " set locked = false where locked =true;"); //Fast variant
         lockers.get(pool).unlockAll();
     }
 
     @Override
     public int firstUnlockRid(String env, String pool) {
-        pool = handlePoolName(env, pool);
+        pool = tableService.fullName(env, pool);
         return lockers.get(pool).firstUnlockId();
     }
 
     @Override
     public int firstBiggerUnlockedId(String env, String pool, int id) {
-        pool = handlePoolName(env, pool);
+        pool = tableService.fullName(env, pool);
         return lockers.get(pool).firstBiggerUnlockedId(id);
     }
 }

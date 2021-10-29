@@ -3,6 +3,7 @@ package load.datapool.todo.rest;
 import load.datapool.db.H2Template;
 import load.datapool.prometheus.Exporter;
 import load.datapool.service.LockerService;
+import load.datapool.service.TableService;
 import lombok.NoArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
@@ -24,15 +25,11 @@ import java.util.regex.Pattern;
 
 @RestController
 @RequestMapping("api/v1")
-@NoArgsConstructor
 public final class TodoRestController {
 
-    @Autowired
-    private H2Template jdbcOperations;
-    @Autowired
-    private Exporter exp;
-    @Autowired
-    private LockerService lockerService;
+    private final H2Template jdbcOperations;
+    private final Exporter exp;
+    private final LockerService lockerService;
 
     private String extErrText = ""; //Extended error cause
     private int retryGetNextCount = 0;// retry if skip seq
@@ -45,10 +42,11 @@ public final class TodoRestController {
 
     private final ReentrantLock restartPoolLock = new ReentrantLock();
 
-    @GetMapping("/initLocks")
-    public ResponseEntity<String> initLocks() {
-        lockerService.initLocks();
-        return ResponseEntity.ok("loaded");
+    @Autowired
+    public TodoRestController(H2Template jdbcOperations, Exporter exp, LockerService lockerService) {
+        this.jdbcOperations = jdbcOperations;
+        this.exp = exp;
+        this.lockerService = lockerService;
     }
 
     @GetMapping(path = "/get-next-value")
@@ -60,6 +58,9 @@ public final class TodoRestController {
         Long sq = -1L;
         extErrText = "";
         String fullPoolName = fullPoolName(env, pool);
+
+        if (!lockerService.poolExist(env, pool))
+            return tableNotFindResponse(fullPoolName);
 
         try {
             sq = jdbcOperations.queryForObject("select nextval (?)", new String[]{getSeqPrefix(env, pool) + "_rid"}, Long.class);
@@ -117,7 +118,7 @@ public final class TodoRestController {
             return getNextData(env, pool, locked);
         } catch (DataAccessException e) {
             exp.increaseLatency(env, pool, "get-next-value", start);
-            return ResponseEntity.badRequest().body(new String(e.getMessage() + "\\\n" + extErrText + "\\\n ERROR " + env + "." + pool));
+            return ResponseEntity.badRequest().body(e.getMessage() + "\\\n" + extErrText + "\\\n ERROR " + env + "." + pool);
         }
     }
 
@@ -202,6 +203,10 @@ public final class TodoRestController {
                                              @RequestParam(value = "rid", defaultValue = "-1") String sRid,
                                              @RequestParam(value = "search-key", defaultValue = "") String searchKey,
                                              @RequestParam(value = "unlock-all", defaultValue = "false") boolean unlockAll) {
+
+        if (!lockerService.poolExist(env, pool))
+            return tableNotFindResponse(fullPoolName(env, pool));
+
         Instant start = Instant.now();
         exp.increaseRequests(env, pool, "unlock");
         Long rid;
@@ -246,6 +251,9 @@ public final class TodoRestController {
                                                  @RequestParam(value = "pool", defaultValue = "testpool") String pool,
                                                  @RequestParam(value = "search-key", defaultValue = "") String searchKey,
                                                  @RequestParam(value = "locked", defaultValue = "false") boolean locked) {
+        if (!lockerService.poolExist(env, pool))
+            return tableNotFindResponse(fullPoolName(env, pool));
+
         Instant start = Instant.now();
         exp.increaseRequests(env, pool, "search-by-key");
         Long sq = (long) -1;
@@ -303,6 +311,8 @@ public final class TodoRestController {
             return ResponseEntity.badRequest().body(new String("File is empty!"));
         }
         if (override) {
+            if (!lockerService.poolExist(env, pool))
+                return tableNotFindResponse(fullPoolName(env, pool));
             if (dropTable(env, pool) || createTable(env, pool)) {
                 lockerService.deletePool(env, pool);
             } else {
@@ -359,15 +369,18 @@ public final class TodoRestController {
 
             if (!notValidRows.equals("")) {
                 exp.increaseLatency(env, pool, "upload-csv-as-json", start);
-                return ResponseEntity.badRequest().body(new String("Success uploaded rows: " + successCnt + ". Wrong parse some lines:\n" + notValidRows.substring(0, Math.min(notValidRows.length(), maxLengthNotValidRows))));
+                return ResponseEntity.badRequest().body("Success uploaded rows: " + successCnt + ". Wrong parse some lines:\n" + notValidRows.substring(0, Math.min(notValidRows.length(), maxLengthNotValidRows)));
             }
             exp.increaseLatency(env, pool, "upload-csv-as-json", start);
-            return ResponseEntity.ok().body(new String("Ok! Uploaded rows: " + successCnt));
+            return ResponseEntity.ok().body("Ok! Uploaded rows: " + successCnt);
         } catch (Exception ex) {
             exp.increaseLatency(env, pool, "upload-csv-as-json", start);
-            return ResponseEntity.badRequest().body(new String("File parse exeption: " + ex.getMessage() + "\n" + notValidRows));
+            return ResponseEntity.badRequest().body("File parse exeption: " + ex.getMessage() + "\n" + notValidRows);
         }
-        //return ResponseEntity.ok().body(new String ("Ok!"));
+    }
+
+    private ResponseEntity<String> tableNotFindResponse(String poolName) {
+        return ResponseEntity.badRequest().body("Table " + poolName + " not found in lockerService");
     }
 
     private String getSeqPrefix(String env, String pool) {

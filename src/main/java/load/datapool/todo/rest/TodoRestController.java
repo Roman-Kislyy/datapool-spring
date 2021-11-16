@@ -301,14 +301,9 @@ public final class TodoRestController {
             return ResponseEntity.badRequest().body(new String("File is empty!"));
         }
         if (override) {
-            if (!lockerService.poolExist(env, pool))
-                return tableNotFindResponse(fullPoolName(env, pool));
-            if (dropTable(env, pool) || createTable(env, pool)) {
-                lockerService.deletePool(env, pool);
-            } else {
-                exp.increaseLatency(env, pool, "upload-csv-as-json", start);
-                return ResponseEntity.badRequest().body(new String("Some problem when trying to clean table " + env + "." + pool));
-            }
+            if (lockerService.poolExist(env, pool))
+                dropTable(env, pool);
+            createTable(env, pool);
         }
         // parse CSV file
         BufferedReader reader = null;
@@ -381,10 +376,6 @@ public final class TodoRestController {
 
     private boolean createTable(String env, String pool) {
         lockerService.putPool(env, pool);
-        return createTable(env, pool, "");
-    }
-
-    private boolean createTable(String env, String pool, String searchKey) {
         boolean res = false;
         try {
             this.jdbcOperations.execute("" +
@@ -415,6 +406,7 @@ public final class TodoRestController {
     }
 
     private boolean dropTable(String env, String pool) {
+        lockerService.deletePool(env, pool);
         boolean res = false;
         try {
             this.jdbcOperations.execute("drop table if exists " + env + "." + pool + ";");

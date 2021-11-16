@@ -5,7 +5,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.PostConstruct;
@@ -76,11 +75,13 @@ public class BaseLockerService implements LockerService {
             if (!containsColumns(schema, tableName))
                 return;
 
+            Locker locker;
             Integer maxRid = maxRid(fullTableName);
             if (maxRid == null)
-                return;
+                locker = new BaseLocker(fullTableName);
+            else
+                locker = new BaseLocker(fullTableName, maxRid);
 
-            Locker locker = new BaseLocker(fullTableName, maxRid);
             lockers.put(fullTableName, locker);
 
             final Integer lockedRows = lockedRows(fullTableName);
@@ -136,8 +137,8 @@ public class BaseLockerService implements LockerService {
     private Integer maxRid(String fullTableName) {
         final String selectMaxRid = "SELECT max(rid) FROM " + fullTableName;
         Integer maxRid = jdbcOperations.queryForObject(selectMaxRid, Integer.class);
-        if (maxRid == null)
-            logger.error("Table " + fullTableName + ": not found maxRid");
+//        if (maxRid == null)
+//            logger.error("Table " + fullTableName + ": not found maxRid");
         return maxRid;
     }
 

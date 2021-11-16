@@ -3,8 +3,8 @@ package load.datapool.todo.rest;
 import load.datapool.db.H2Template;
 import load.datapool.prometheus.Exporter;
 import load.datapool.service.LockerService;
-import load.datapool.service.TableService;
-import lombok.NoArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.EmptyResultDataAccessException;
@@ -14,11 +14,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.time.Duration;
 import java.time.Instant;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -26,6 +22,8 @@ import java.util.regex.Pattern;
 @RestController
 @RequestMapping("api/v1")
 public final class TodoRestController {
+
+    private final Logger logger = LoggerFactory.getLogger(TodoRestController.class);
 
     private final H2Template jdbcOperations;
     private final Exporter exp;
@@ -179,22 +177,14 @@ public final class TodoRestController {
             } else {
                 this.jdbcOperations.update("insert into " + env + "." + pool + "(rid, text, searchkey, locked) values (nextval (?),?,?,?);", getSeqPrefix(env, pool) + "_max", text, searchKey, false);
             }
-            lockerService.add(env, pool);
+        } catch (Exception e) {
+            logger.error(e.getMessage());
             exp.increaseLatency(env, pool, "put-value", start);
-            return ResponseEntity.ok(new String((long) 1 + " Inserted:" + "locked = false; searchKey = " + searchKey));
-        } catch (DataAccessException e) {
-            if (isTableNotFound(((DataAccessException) e).getCause())) {
-                if (createTable(env, pool, searchKey)) {
-                    lockerService.putPool(env, pool);
-                    System.out.println("Table " + env + "." + pool + " created!");
-                    return this.putData(env, pool, searchKey, text);
-                }
-            } else {
-                exp.increaseLatency(env, pool, "put-value", start);
-                return ResponseEntity.badRequest().body(e.getMessage());
-            }
+            return ResponseEntity.badRequest().body(e.getMessage());
         }
-        return null;
+        lockerService.add(env, pool);
+        exp.increaseLatency(env, pool, "put-value", start);
+        return ResponseEntity.ok(new String((long) 1 + " Inserted:" + "locked = false; searchKey = " + searchKey));
     }
 
     @PostMapping(path = "/unlock")
@@ -390,6 +380,7 @@ public final class TodoRestController {
     }
 
     private boolean createTable(String env, String pool) {
+        lockerService.putPool(env, pool);
         return createTable(env, pool, "");
     }
 

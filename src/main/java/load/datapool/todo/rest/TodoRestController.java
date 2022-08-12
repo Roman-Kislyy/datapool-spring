@@ -284,12 +284,12 @@ public final class TodoRestController {
     @PostMapping(path = "/upload-csv-as-json")
     public ResponseEntity<String> uploadCSV(@RequestParam(value = "env", defaultValue = "load") String env,
                                             @RequestParam(value = "pool", defaultValue = "testpool") String pool,
+                                            @RequestParam(value = "delimiter", defaultValue = ",") String delim,
                                             @RequestParam(value = "override", defaultValue = "false") boolean override,
                                             @RequestParam(value = "with-headers", defaultValue = "true") boolean withHeaders,
                                             @RequestParam("file") MultipartFile file) {
         Instant start = Instant.now();
         exp.increaseRequests(env, pool, "upload-csv-as-json");
-        String delim = ",";
         final String fullPoolName = fullPoolName(env, pool);
 
         if (!withHeaders) {

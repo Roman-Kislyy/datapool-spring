@@ -143,7 +143,7 @@ public final class TodoRestController {
                 jdbcOperations.update("ALTER SEQUENCE " + getSeqPrefix(env, pool) + "_rid" + " RESTART WITH ?", newSqValue);
                 return true;
             } else {//need reset sequence next
-                newSqValue = this.jdbcOperations.queryForObject("SELECT nvl(min (rid),0) FROM " + env + "." + pool + " where rid > ? and rid <= ?  and locked != true", new Object[]{currentValue, sqMax}, Long.class);
+                newSqValue = this.jdbcOperations.queryForObject("SELECT nvl(min (rid),0) FROM " + env + "." + pool + " where  locked != true", Long.class);
                 if (newSqValue == 0) {
                     extErrText += "Some errors when try to make sequence offset." + " ";
                     return false;

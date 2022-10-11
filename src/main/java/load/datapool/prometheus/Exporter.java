@@ -4,11 +4,12 @@ import io.prometheus.client.CollectorRegistry;
 import io.prometheus.client.Counter;
 import io.prometheus.client.Gauge;
 import io.prometheus.client.exporter.common.TextFormat;
-import load.datapool.db.H2DataSourse;
+import load.datapool.db.H2Template;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.EmptyResultDataAccessException;
-import org.springframework.jdbc.core.JdbcOperations;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Service;
+
 import java.io.IOException;
 import java.io.StringWriter;
 import java.io.Writer;
@@ -16,12 +17,16 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+@Service
 public class Exporter {
+
+    @Autowired
+    private H2Template jdbcOperations;
+
     // Prometheus collectors
     static final CollectorRegistry c = new CollectorRegistry();
     static private String [] labelNames= new String [] {"host", "port", "environment","name"};
@@ -55,17 +60,16 @@ public class Exporter {
     //Other attributes
     private String host = "undefined";
 
-    @Value(value = "${server.port:1}")
-    private int port;
+//    @Value(value = "${server.port:1}")
+    private int port = 8080;
     static private long nextCalulationTime = 0;
     static private long calculationDelay = 15000; //15 sec
 
-    private final JdbcOperations jdbcOperations;
+
     public boolean isCalcAVRows = false; //getAvailableRows
 
 
     public Exporter(){
-        jdbcOperations = new JdbcTemplate(new H2DataSourse().getDataSource());
         try {
             host = InetAddress.getLocalHost().getHostName();
         } catch (UnknownHostException e) {

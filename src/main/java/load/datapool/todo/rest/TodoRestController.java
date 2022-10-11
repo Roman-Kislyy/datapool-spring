@@ -1,28 +1,34 @@
 package load.datapool.todo.rest;
 
-import load.datapool.db.H2DataSourse;
+import load.datapool.db.H2Template;
 import load.datapool.prometheus.Exporter;
-import lombok.NonNull;
+import load.datapool.service.LockerService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.http.ResponseEntity;
-import org.springframework.jdbc.core.JdbcOperations;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.time.Instant;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @RestController
 @RequestMapping("api/v1")
-//@RequiredArgsConstructor
 public final class TodoRestController {
 
-    @NonNull
-    private final JdbcOperations jdbcOperations;
+    private final Logger logger = LoggerFactory.getLogger(TodoRestController.class);
+
+    private final H2Template jdbcOperations;
+    private final Exporter exp;
+    private final LockerService lockerService;
+
     private String extErrText = ""; //Extended error cause
     private int retryGetNextCount = 0;// retry if skip seq
     private int maxSequenceLength = 25;
@@ -31,11 +37,14 @@ public final class TodoRestController {
     private int maxLengthNotValidRows = 25000;//Max length wrong lines for response
     private int retryGetNextMaxCount = 999999;
     private int seqCycleCache = 5;
-    private Exporter exp = new Exporter();
 
+    private final ReentrantLock restartPoolLock = new ReentrantLock();
 
-    public TodoRestController() {
-        jdbcOperations = new JdbcTemplate(new H2DataSourse().getDataSource());
+    @Autowired
+    public TodoRestController(H2Template jdbcOperations, Exporter exp, LockerService lockerService) {
+        this.jdbcOperations = jdbcOperations;
+        this.exp = exp;
+        this.lockerService = lockerService;
     }
 
     @GetMapping(path = "/get-next-value")
@@ -43,73 +52,103 @@ public final class TodoRestController {
                                               @RequestParam(value = "pool", defaultValue = "testpool") String pool,
                                               @RequestParam(value = "locked", defaultValue = "false") boolean locked) {
         Instant start = Instant.now();
-        exp.increaseRequests(env,pool,"get-next-value");
-        Long sq = (long) -1;
+        exp.increaseRequests(env, pool, "get-next-value");
+        Long sq = -1L;
         extErrText = "";
+        String fullPoolName = fullPoolName(env, pool);
+
+        if (!lockerService.poolExist(env, pool))
+            return tableNotFindResponse(fullPoolName);
 
         try {
-            sq = this.jdbcOperations.queryForObject("select nextval (?)", new Object[]{getSeqPrefix(env, pool) + "_rid"}, Long.class);
-            ResponseEntity<String> res = ResponseEntity.ok(this.jdbcOperations.queryForObject("select rid, text, locked from " + env + "." + pool + " where rid = ? and locked = false limit 1",
+            sq = jdbcOperations.queryForObject("select nextval (?)", new String[]{getSeqPrefix(env, pool) + "_rid"}, Long.class);
+            ResponseEntity<String> res = ResponseEntity.ok(jdbcOperations.queryForObject("select rid, text, locked from " + fullPoolName + " where rid = ? and locked = false limit 1",
                     (resultSet, i) ->
                             new String("{\"rid\":" + resultSet.getLong("rid") +
                                     ",\"values\":" + resultSet.getString("text") +
-                                    ",\"locked\":" + locked +"}"), sq));
-            //"\"locked\":" + resultSet.getBoolean("locked")), sq));
+                                    ",\"locked\":" + locked + "}"), sq));
             if (locked) {
-                this.jdbcOperations.update("update " + env + "." + pool + " set locked = true where  rid = ? and locked = false;", sq);
-                //locked = true;
+                lockerService.lock(env, pool, sq.intValue());
             }
-            exp.increaseLatency(env,pool,"get-next-value", start);
+            exp.increaseLatency(env, pool, "get-next-value", start);
             return res;
 
-        } catch (EmptyResultDataAccessException  e) {
+        } catch (EmptyResultDataAccessException e) {
+            if (restartPoolLock.tryLock()) {
+                if (fixSequenceState(env, pool, sq)) {
+                    System.out.println("Sequence reseted " + fullPoolName + " last value = " + sq
+//                        + ". Retry count = " + retryGetNextCount
+                    );
 
-            if (fixSequenceState(env, pool, sq)){
-                System.out.println("EmptyResultDataAccessException");
-                System.out.println("Sequence reseted " + env +"." + pool + " last value = " + sq + ". Retry count = " + retryGetNextCount);
-                if (retryGetNextCount >= retryGetNextMaxCount) {
-                    retryGetNextCount = 0;
-                    exp.increaseLatency(env,pool,"get-next-value", start);
-                    return ResponseEntity.badRequest().body(new String(e.getMessage()+ "\\\n"
-                            + extErrText
-                            + "\\\n Datapool may be empty."
-                            + "\\\n Very often reset sequense: " + retryGetNextCount
-                            + " for " + env +"." + pool + " last value = " + sq));
+                /*
+                todo так как контроллер - это бин, а бин - синглтон, то retryGetNextCount считает сумму рестартов по всем пулам без разбора.
+                Также тут не учитываются временные промежутки.
+                Таким образом, мы просто шлём badRequest без явных оснований.
+                Пока вырезаю эту фичу.
+                 */
+
+//                if (retryGetNextCount >= retryGetNextMaxCount) {
+//                    retryGetNextCount = 0;
+//                    exp.increaseLatency(env, pool, "get-next-value", start);
+//                    return ResponseEntity.badRequest().body(new String(e.getMessage() + "\\\n"
+//                            + extErrText
+//                            + "\\\n Datapool may be empty."
+//                            + "\\\n Very often reset sequense: " + retryGetNextCount
+//                            + " for " + env + "." + pool + " last value = " + sq));
+//                }
+//                retryGetNextCount++;
+                } else {
+                    restartPoolLock.unlock();
+                    exp.increaseLatency(env, pool, "get-next-value", start);
+                    return ResponseEntity.badRequest().body(new String(e.getMessage() + "\\\n" + extErrText + "\\\n ERROR " + env + "." + pool + " sequence = " + sq));
                 }
-                retryGetNextCount = retryGetNextCount +1;
-                exp.increaseLatency(env,pool,"get-next-value", start);
-                return this.getNextData(env, pool, locked);
+                restartPoolLock.unlock();
+            } else {
+                try {
+                    while (restartPoolLock.isLocked()) {
+                        Thread.sleep(50);
+                    }
+                } catch (InterruptedException ex) {
+                    ex.printStackTrace();
+                }
             }
-            exp.increaseLatency(env,pool,"get-next-value", start);
-            return ResponseEntity.badRequest().body(new String(e.getMessage()+ "\\\n" + extErrText+ "\\\n ERROR " + env +"." + pool + " sequence = " + sq));
+            exp.increaseLatency(env, pool, "get-next-value", start);
+            return getNextData(env, pool, locked);
         } catch (DataAccessException e) {
-            exp.increaseLatency(env,pool,"get-next-value", start);
-            return ResponseEntity.badRequest().body(new String(e.getMessage()+ "\\\n" + extErrText+ "\\\n ERROR " + env +"." + pool));
+            exp.increaseLatency(env, pool, "get-next-value", start);
+            return ResponseEntity.badRequest().body(e.getMessage() + "\\\n" + extErrText + "\\\n ERROR " + env + "." + pool);
         }
     }
 
-    synchronized private boolean fixSequenceState(String env, String pool, Long currentValue) {
+    private boolean fixSequenceState(String env, String pool, Long currentValue) {
+        String fullPullName = fullPoolName(env, pool);
         if (currentValue < 0) return false; //Some undefined sequence error
         try {
-            Long sqMax = this.jdbcOperations.queryForObject("SELECT nvl(max (rid), 0) FROM " + env + "." +pool + "  where rid >= ? and locked != true", new Object[]{currentValue}, Long.class); //Is exist values forward
-            Long newSqValue = (long)0;
-            if (sqMax == 0 ) //Need reset sequence to start, no values forward
+//            long operation
+//            Long sqMax = jdbcOperations.queryForObject("SELECT nvl(max (rid), 0) FROM " + env + "." + pool + "  where rid >= ? and locked = false", new Object[]{currentValue}, Long.class); //Is exist values forward
+            int sqMax = lockerService.firstBiggerUnlockedId(env, pool, currentValue.intValue());
+            Long newSqValue = 0L;
+            if (sqMax == 0) //Need reset sequence to start, no values forward
             // You can change for sequence CYCLE type if slow puts are planing
             {
-                newSqValue = this.jdbcOperations.queryForObject("SELECT nvl(min (rid),0) FROM " + env + "." +pool + " where rid > 0 and locked != true",  Long.class);
-                if (newSqValue == 0)
-                {
+//                long operation
+//                newSqValue = jdbcOperations.queryForObject("SELECT nvl(min (rid), 0) FROM " + env + "." +pool + " where rid > 0 and locked = false",  Long.class);
+                newSqValue = (long) lockerService.firstUnlockRid(env, pool);
+                if (newSqValue == 0) {
                     extErrText += "May be table is empty." + " ";
-                    newSqValue = (long) 1;
-                    this.jdbcOperations.update  ("ALTER SEQUENCE "+  getSeqPrefix(env,pool)+"_rid" +" RESTART WITH ?", newSqValue);
+                    newSqValue = 1L;
+                    jdbcOperations.update("ALTER SEQUENCE " + getSeqPrefix(env, pool) + "_rid" + " RESTART WITH ?", newSqValue);
                     return false;
                 } //May be table is empty
-                this.jdbcOperations.update  ("ALTER SEQUENCE "+  getSeqPrefix(env,pool)+"_rid" +" RESTART WITH ?", newSqValue);
+                jdbcOperations.update("ALTER SEQUENCE " + getSeqPrefix(env, pool) + "_rid" + " RESTART WITH ?", newSqValue);
                 return true;
-            } else{//need reset sequence next
-                newSqValue = this.jdbcOperations.queryForObject("SELECT nvl(min (rid),0) FROM " + env + "." +pool + " where rid > ? and rid <= ?  and locked != true",new Object[]{currentValue,sqMax},  Long.class);
-                if (newSqValue == 0) {extErrText += "Some errors when try to make sequence offset." + " "; return false;} //May be table is empty
-                this.jdbcOperations.update  ("ALTER SEQUENCE "+  getSeqPrefix(env,pool)+"_rid" +" RESTART WITH ?", newSqValue);
+            } else {//need reset sequence next
+                newSqValue = this.jdbcOperations.queryForObject("SELECT nvl(min (rid),0) FROM " + env + "." + pool + " where  locked != true", Long.class);
+                if (newSqValue == 0) {
+                    extErrText += "Some errors when try to make sequence offset." + " ";
+                    return false;
+                } //May be table is empty
+                this.jdbcOperations.update("ALTER SEQUENCE " + getSeqPrefix(env, pool) + "_rid" + " RESTART WITH ?", newSqValue);
                 return true;
             }
 
@@ -126,169 +165,180 @@ public final class TodoRestController {
                                           @RequestParam(value = "search-key", defaultValue = "") String searchKey,
                                           @RequestBody String text) {
         Instant start = Instant.now();
-        exp.increaseRequests(env,pool,"put-value");
+        exp.increaseRequests(env, pool, "put-value");
+
+        if (!lockerService.poolExist(env, pool)) {
+            createTable(env, pool);
+        }
+
         try {
             if (searchKey.equals("")) {//No
                 this.jdbcOperations.update("insert into " + env + "." + pool + "(rid, text, locked) values (nextval (?),?,?);", getSeqPrefix(env, pool) + "_max", text, false);
-            }else{
-                this.jdbcOperations.update("insert into " + env + "." + pool + "(rid, text, searchkey, locked) values (nextval (?),?,?,?);", getSeqPrefix(env, pool) + "_max", text, searchKey,false);
-            }
-            exp.increaseLatency(env,pool,"put-value", start);
-            return ResponseEntity.ok(new String((long) 1 +  " Inserted:" + "locked = false; searchKey = " + searchKey) );
-        } catch (DataAccessException e) {
-
-            if (isTableNotFound(((DataAccessException) e).getCause())) {
-                if (createTable(env, pool,searchKey)) {
-                    System.out.println("Table " + env + "." + pool + " created!");
-                    return this.putData(env, pool,searchKey, text);
-                }
             } else {
-                exp.increaseLatency(env,pool,"put-value", start);
-                return ResponseEntity.badRequest().body(e.getMessage());
+                this.jdbcOperations.update("insert into " + env + "." + pool + "(rid, text, searchkey, locked) values (nextval (?),?,?,?);", getSeqPrefix(env, pool) + "_max", text, searchKey, false);
             }
+        } catch (Exception e) {
+            logger.error(e.getMessage());
+            exp.increaseLatency(env, pool, "put-value", start);
+            return ResponseEntity.badRequest().body(e.getMessage());
         }
-        return null;
+        lockerService.add(env, pool);
+        exp.increaseLatency(env, pool, "put-value", start);
+        return ResponseEntity.ok(new String((long) 1 + " Inserted:" + "locked = false; searchKey = " + searchKey));
     }
 
     @PostMapping(path = "/unlock")
     public ResponseEntity<String> unlockData(@RequestParam(value = "env", defaultValue = "load") String env,
                                              @RequestParam(value = "pool", defaultValue = "testpool") String pool,
-                                             @RequestParam(value = "rid", defaultValue = "-1")  String sRid,
-                                             @RequestParam(value = "search-key", defaultValue = "")  String searchKey,
-                                             @RequestParam(value = "unlock-all", defaultValue = "false") boolean unlockAll)
-    {
+                                             @RequestParam(value = "rid", defaultValue = "-1") String sRid,
+                                             @RequestParam(value = "search-key", defaultValue = "") String searchKey,
+                                             @RequestParam(value = "unlock-all", defaultValue = "false") boolean unlockAll) {
+
+        if (!lockerService.poolExist(env, pool))
+            return tableNotFindResponse(fullPoolName(env, pool));
+
         Instant start = Instant.now();
-        exp.increaseRequests(env,pool,"unlock");
+        exp.increaseRequests(env, pool, "unlock");
         Long rid;
 
         //Check rid valid value
         try {
-           rid = Long.parseLong(sRid.trim());  //<-- String to long here
+            rid = Long.parseLong(sRid.trim());  //<-- String to long here
         } catch (NumberFormatException nfe) {
-            exp.increaseLatency(env,pool,"unlock", start);
-            return ResponseEntity.badRequest().body(new String(nfe.getMessage()+ "\\\n" + extErrText+ "\\\n ERROR " + env +"." + pool));
+            exp.increaseLatency(env, pool, "unlock", start);
+            return ResponseEntity.badRequest().body(new String(nfe.getMessage() + "\\\n" + extErrText + "\\\n ERROR " + env + "." + pool));
         }
 
         try {
             if (unlockAll) {
-                this.jdbcOperations.update("update " + env + "." + pool + " set locked = false where locked is null; update " + env + "." + pool + " set locked = false where locked =true;"); //Fast variant
-            }else {
+                lockerService.unlockAll(env, pool);
+            } else {
                 if (!sRid.equals("-1")) {
-                    this.jdbcOperations.update("update " + env + "." + pool + " set locked = false where rid = ?", rid.longValue());
+                    lockerService.unlock(env, pool, rid.intValue());
                 } else {
-                    if (!searchKey.equals("")){
-                        this.jdbcOperations.update("update " + env + "." + pool + " set locked = false where searchkey = ?", searchKey);
-                    }
-                    else {
-                        exp.increaseLatency(env,pool,"unlock", start);
+                    if (!searchKey.equals("")) {
+                        lockerService.unlock(env, pool, searchKey);
+                    } else {
+                        exp.increaseLatency(env, pool, "unlock", start);
                         return ResponseEntity.badRequest().body(new String("You must define one of the parameters variant:\n"
-                                                                            + "\t&unlock-all=true \n"
-                                                                            + "\t&rid=<row number> \n"
-                                                                            + "\t&search-key=<key value>"));
+                                + "\t&unlock-all=true \n"
+                                + "\t&rid=<row number> \n"
+                                + "\t&search-key=<key value>"));
                     }
                 }
             }
 
         } catch (DataAccessException e) {
-            exp.increaseLatency(env,pool,"unlock", start);
-            return ResponseEntity.badRequest().body(new String(e.getMessage()+ "\\\n" + extErrText+ "\\\n ERROR " + env +"." + pool));
+            exp.increaseLatency(env, pool, "unlock", start);
+            return ResponseEntity.badRequest().body(new String(e.getMessage() + "\\\n" + extErrText + "\\\n ERROR " + env + "." + pool));
         }
-        exp.increaseLatency(env,pool,"unlock", start);
-        return ResponseEntity.ok(new String("Unlock successfully!") );
+        exp.increaseLatency(env, pool, "unlock", start);
+        return ResponseEntity.ok(new String("Unlock successfully!"));
     }
+
     @GetMapping(path = "/search-by-key")
     public ResponseEntity<String> getBySearchKey(@RequestParam(value = "env", defaultValue = "load") String env,
-                                              @RequestParam(value = "pool", defaultValue = "testpool") String pool,
-                                              @RequestParam(value = "search-key", defaultValue = "") String searchKey,
-                                              @RequestParam(value = "locked", defaultValue = "false") boolean locked) {
+                                                 @RequestParam(value = "pool", defaultValue = "testpool") String pool,
+                                                 @RequestParam(value = "search-key", defaultValue = "") String searchKey,
+                                                 @RequestParam(value = "locked", defaultValue = "false") boolean locked) {
+        if (!lockerService.poolExist(env, pool))
+            return tableNotFindResponse(fullPoolName(env, pool));
+
         Instant start = Instant.now();
-        exp.increaseRequests(env,pool,"search-by-key");
+        exp.increaseRequests(env, pool, "search-by-key");
         Long sq = (long) -1;
         extErrText = "";
-        if (searchKey.equals("")){
-            exp.increaseLatency(env,pool,"search-by-key", start);
+        if (searchKey.equals("")) {
+            exp.increaseLatency(env, pool, "search-by-key", start);
             return ResponseEntity.badRequest().body(new String("Undefined request parameter \"search-key\"."));
         }
         try {
             final Long[] rid = {null};
+            Instant dd = Instant.now();
+            // todo - долгий запрос!!!
             ResponseEntity<String> res = ResponseEntity.ok(this.jdbcOperations.queryForObject(
-                                "select rid, text,searchkey, locked from " + env + "." + pool + " where searchkey = ? and locked = false limit 1",
+                    "select rid, text,searchkey, locked from " + env + "." + pool + " where searchkey = ? and locked = false limit 1",
                     (resultSet, i) -> {
                         rid[0] = resultSet.getLong("rid");
-                        exp.increaseLatency(env,pool,"search-by-key", start);
+                        exp.increaseLatency(env, pool, "search-by-key", start);
                         return new String("{\"rid\":" + resultSet.getLong("rid") +
                                 ",\"searchkey\":\"" + resultSet.getString("searchkey") + "\"" +
                                 ",\"values\":" + resultSet.getString("text") +
-                                ",\"locked\":" + locked +"}");
-                        }
-                        ,searchKey));
+                                ",\"locked\":" + locked + "}");
+                    }
+                    , searchKey));
 
             if (locked) {
                 System.out.println("Try update locked value.");
-                this.jdbcOperations.update("update " + env + "." + pool + " set locked = true where  rid = ? and locked = false;", rid[0]);
+                lockerService.lock(env, pool, rid[0].intValue());
             }
-            exp.increaseLatency(env,pool,"search-by-key", start);
+            exp.increaseLatency(env, pool, "search-by-key", start);
             return res;
 
-        } catch (EmptyResultDataAccessException  e) {
-            exp.increaseLatency(env,pool,"search-by-key", start);
-            return ResponseEntity.badRequest().body(new String(e.getMessage()+ "\\\n" + extErrText+ "\\\n ERROR " + env +"." + pool + " searchkey = " + searchKey));
         } catch (DataAccessException e) {
-            exp.increaseLatency(env,pool,"search-by-key", start);
-            return ResponseEntity.badRequest().body(new String(e.getMessage()+ "\\\n" + extErrText+ "\\\n ERROR " + env +"." + pool + " searchkey = " + searchKey));
+            exp.increaseLatency(env, pool, "search-by-key", start);
+            return ResponseEntity.badRequest().body(new String(e.getMessage() + "\\\n" + extErrText + "\\\n ERROR " + env + "." + pool + " searchkey = " + searchKey));
         }
     }
 
     @PostMapping(path = "/upload-csv-as-json")
     public ResponseEntity<String> uploadCSV(@RequestParam(value = "env", defaultValue = "load") String env,
                                             @RequestParam(value = "pool", defaultValue = "testpool") String pool,
+                                            @RequestParam(value = "delimiter", defaultValue = ",") String delim,
                                             @RequestParam(value = "override", defaultValue = "false") boolean override,
                                             @RequestParam(value = "with-headers", defaultValue = "true") boolean withHeaders,
-                                            @RequestParam("file") MultipartFile file){
+                                            @RequestParam("file") MultipartFile file) {
         Instant start = Instant.now();
-        exp.increaseRequests(env,pool,"upload-csv-as-json");
-        String delim = ",";
+        exp.increaseRequests(env, pool, "upload-csv-as-json");
+        final String fullPoolName = fullPoolName(env, pool);
+
         if (!withHeaders) {
-            exp.increaseLatency(env,pool,"upload-csv-as-json", start);
-            return ResponseEntity.badRequest().body(new String ("With out headers csv files not supported!"));
+            exp.increaseLatency(env, pool, "upload-csv-as-json", start);
+            return ResponseEntity.badRequest().body(new String("With out headers csv files not supported!"));
         }
         if (file.isEmpty()) {
-            exp.increaseLatency(env,pool,"upload-csv-as-json", start);
-            return ResponseEntity.badRequest().body(new String ("File is empty!"));
+            exp.increaseLatency(env, pool, "upload-csv-as-json", start);
+            return ResponseEntity.badRequest().body(new String("File is empty!"));
         }
-        if (override){
-            if (!dropTable(env, pool) || !createTable(env, pool)){
-                exp.increaseLatency(env,pool,"upload-csv-as-json", start);
-                return ResponseEntity.badRequest().body(new String ("Some problem when trying to clean table " +env + "." + pool));
-            }
+        if (override) {
+            if (lockerService.poolExist(env, pool))
+                dropTable(env, pool);
+            createTable(env, pool);
         }
         // parse CSV file
         BufferedReader reader = null;
         String notValidRows = "";
+
+        if (!lockerService.poolExist(env, pool)) {
+            createTable(env, pool);
+        }
+
         try {
             reader = new BufferedReader(new InputStreamReader(file.getInputStream()));
             String header = reader.readLine();
-            if (header == null){
-                exp.increaseLatency(env,pool,"upload-csv-as-json", start);
-                return ResponseEntity.badRequest().body(new String ("Not found rows into file!"));
+            if (header == null) {
+                exp.increaseLatency(env, pool, "upload-csv-as-json", start);
+                return ResponseEntity.badRequest().body(new String("Not found rows into file!"));
             }
-            int cntColumns = header.split (delim).length;
-            String headers[] = header.split (delim);
+            int cntColumns = header.split(delim).length;
+            String headers[] = header.split(delim);
 
             String line = reader.readLine();
 
             String json = "";
             int successCnt = 0;
             while (line != null) {
-                String values [] = line.split (delim);
-                if (values.length != cntColumns && notValidRows.length() < maxLengthNotValidRows){
+                String values[] = line.split(delim);
+                if (values.length != cntColumns && notValidRows.length() < maxLengthNotValidRows) {
                     notValidRows += line + "\n";
-                }else {
+                } else {
                     json = "{";
                     for (int i = 0; i < cntColumns; i++) {
                         json += "\"" + headers[i] + "\":\"" + values[i] + "\",";
                     }
-                    if (json.endsWith(",")) { json = json.substring(0,json.length()-1);}
+                    if (json.endsWith(",")) {
+                        json = json.substring(0, json.length() - 1);
+                    }
                     json += "}";
                     this.jdbcOperations.update("insert into " + env + "." + pool + "(rid, text, locked) values (nextval (?),?,?);", getSeqPrefix(env, pool) + "_max", json, false);
                     successCnt++;
@@ -299,17 +349,23 @@ public final class TodoRestController {
                 line = reader.readLine();
             }
             reader.close();
-            if (!notValidRows.equals("")){
-                exp.increaseLatency(env,pool,"upload-csv-as-json", start);
-                return ResponseEntity.badRequest().body(new String ("Success uploaded rows: " + successCnt + ". Wrong parse some lines:\n" + notValidRows.substring(0, Math.min(notValidRows.length(), maxLengthNotValidRows))));
+
+            lockerService.putPool(env, pool, successCnt);
+
+            if (!notValidRows.equals("")) {
+                exp.increaseLatency(env, pool, "upload-csv-as-json", start);
+                return ResponseEntity.badRequest().body("Success uploaded rows: " + successCnt + ". Wrong parse some lines:\n" + notValidRows.substring(0, Math.min(notValidRows.length(), maxLengthNotValidRows)));
             }
-            exp.increaseLatency(env,pool,"upload-csv-as-json", start);
-            return ResponseEntity.ok().body(new String ("Ok! Uploaded rows: " + successCnt));
+            exp.increaseLatency(env, pool, "upload-csv-as-json", start);
+            return ResponseEntity.ok().body("Ok! Uploaded rows: " + successCnt);
         } catch (Exception ex) {
-            exp.increaseLatency(env,pool,"upload-csv-as-json", start);
-            return ResponseEntity.badRequest().body(new String ("File parse exeption: " + ex.getMessage() + "\n" + notValidRows));
+            exp.increaseLatency(env, pool, "upload-csv-as-json", start);
+            return ResponseEntity.badRequest().body("File parse exeption: " + ex.getMessage() + "\n" + notValidRows);
         }
-        //return ResponseEntity.ok().body(new String ("Ok!"));
+    }
+
+    private ResponseEntity<String> tableNotFindResponse(String poolName) {
+        return ResponseEntity.badRequest().body("Table " + poolName + " not found in lockerService");
     }
 
     private String getSeqPrefix(String env, String pool) {
@@ -319,9 +375,7 @@ public final class TodoRestController {
     }
 
     private boolean createTable(String env, String pool) {
-        return createTable(env,pool,"");
-    }
-    private boolean createTable(String env, String pool, String searchKey) {
+        lockerService.putPool(env, pool);
         boolean res = false;
         try {
             this.jdbcOperations.execute("" +
@@ -350,7 +404,9 @@ public final class TodoRestController {
             return false;
         }
     }
+
     private boolean dropTable(String env, String pool) {
+        lockerService.deletePool(env, pool);
         boolean res = false;
         try {
             this.jdbcOperations.execute("drop table if exists " + env + "." + pool + ";");
@@ -376,5 +432,9 @@ public final class TodoRestController {
             return true;
         }
         return false;
+    }
+
+    private String fullPoolName(String env, String pool) {
+        return env + "." + pool;
     }
 }

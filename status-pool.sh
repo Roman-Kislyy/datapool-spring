@@ -1,1 +1,1 @@
-ps -aux | grep datapool-service | grep $PWD | grep -v grep
+ps -au | grep datapool-service | grep $PWD | grep -v grep

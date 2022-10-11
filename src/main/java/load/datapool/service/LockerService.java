@@ -1,0 +1,18 @@
+package load.datapool.service;
+
+public interface LockerService {
+
+    void putPool(String env, String pool);
+    void putPool(String env, String pool, int size);
+    void deletePool(String env, String pool);
+    void add(String env, String pool);
+    void lock(String env, String pool, int rid);
+    void unlock(String env, String pool, int rid);
+    void unlock(String env, String pool, String searchKey);
+    void unlockAll(String env, String pool);
+    int firstUnlockRid(String env, String pool);
+    int firstBiggerUnlockedId(String env, String pool, int id);
+    void initLocks();
+    boolean poolExist(String env, String pool);
+
+}

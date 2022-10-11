@@ -12,7 +12,7 @@
 
     <groupId>load.datapool</groupId>
     <artifactId>datapool-service</artifactId>
-    <version>1.4.0</version>
+    <version>1.5.4</version>
     <packaging>jar</packaging>
     <name>datapool-service</name>
     <description>Datapool service </description>
@@ -41,6 +41,16 @@
             <groupId>io.prometheus</groupId>
             <artifactId>simpleclient</artifactId>
             <version>0.9.0</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-pool2</artifactId>
+            <version>2.11.1</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-dbcp2</artifactId>
+            <version>2.9.0</version>
         </dependency>
 
         <dependency>

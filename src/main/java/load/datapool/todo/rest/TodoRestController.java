@@ -437,4 +437,20 @@ public final class TodoRestController {
     private String fullPoolName(String env, String pool) {
         return env + "." + pool;
     }
+
+    @DeleteMapping(path = "/drop-pool")
+    public ResponseEntity<String> deletePool(@RequestParam(value = "env", defaultValue = "load") String env,
+                                             @RequestParam(value = "pool", defaultValue = "testpool") String pool) {
+        if (lockerService.poolExist(env, pool)) {
+            try {
+                dropTable(env, pool);
+                return ResponseEntity.ok().body("Pool deleted successfully!");
+            } catch (Exception ex) {
+                System.err.println(ex.getMessage());
+                return ResponseEntity.badRequest().body("Failed to delete pool");
+            }
+        } else {
+            return ResponseEntity.badRequest().body("Pool not found");
+        }
+    }
 }

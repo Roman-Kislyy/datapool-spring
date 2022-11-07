@@ -24,6 +24,7 @@
             <li><a href="#PutOne">Сохранить одно значение</a></li>
             <li><a href="#SearchOne">Поиск по ключу</a></li>
             <li><a href="#Unlock">Разблокировка записи</a></li>
+            <li><a href="#Delete">Удаление пула</a></li>
 
 
         </ul>
@@ -158,7 +159,12 @@
     <p>Запрос - <em><code>curl <a href="http://localhost:8080/api/v1/unlock?pool=demo_put_clients&amp;search-key=appSequense10">http://localhost:8080/api/v1/unlock?pool=demo_put_clients&search-key=appSequense10</a></code></em></p>
     <p>Ответ - <code>Unlock successfully!</code></p>
 </blockquote>
-
+<h2><a id="Delete"></a>Удаление пула</h2>
+<p>Метод /drop-pool удаляет пул из БД.</p>
+<p>Пример использования:</p>
+<blockquote>
+    <p>Запрос: <em><code>curl -X DELETE <a href="http://localhost:8080/api/v1/drop-pool?env=load&amp;pool=demo_pool">http://localhost:8080/api/v1/drop-pool?env=load&pool=demo_pool</a></code></em></p>
+</blockquote>
 <h2><a id="JMXExample"></a>Пример использования в тест-плане Jmeter</h2>
 <p>Текущий пример в файле &lt;repo&gt;\src\test\test.jmx</p>
 <p>Версия jmx предварительная и будет улучшена.</p>

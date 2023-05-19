@@ -1,5 +1,5 @@
 # Changelog
-Service for rest api load testing data pools
+Service for creating and utilizing test data pools via REST API.
 
 ## [1.6.1]
 

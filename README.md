@@ -1,5 +1,5 @@
 # datapool-spring
-Service for rest api load testing data pools
+Service for creating and utilizing test data pools via REST API.
 
 # Useful links Spring REST
 
@@ -36,3 +36,8 @@ java -jar datapool-service-1.0.0.jar
 # Documentation
 
 ./src/main/resources/static/index.html
+
+
+# View
+
+![](src/main/resources/static/schema.jpg)

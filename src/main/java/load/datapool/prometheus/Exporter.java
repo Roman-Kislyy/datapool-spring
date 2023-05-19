@@ -6,7 +6,6 @@ import io.prometheus.client.Gauge;
 import io.prometheus.client.exporter.common.TextFormat;
 import load.datapool.db.H2Template;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.stereotype.Service;
 
@@ -88,9 +87,9 @@ public class Exporter {
 
     private void  saveMetrics (String env, String pool, int totalCnt, int availCnt, int seqOffset){
 
-        if (totalCnt >= 0) {totalRows.labels(new String [] {host,String.valueOf(port),env,pool}).set(totalCnt);}
-        if (seqOffset >= 0) {currentOffset.labels(new String [] {host,String.valueOf(port),env,pool}).set(seqOffset);}
-        if (availCnt >= 0) {availableRows.labels(new String [] {host,String.valueOf(port),env,pool}).set(availCnt);}
+        if (totalCnt >= 0) {totalRows.labels(new String [] {host,String.valueOf(port),env.toUpperCase(), pool.toUpperCase()}).set(totalCnt);}
+        if (seqOffset >= 0) {currentOffset.labels(new String [] {host,String.valueOf(port),env.toUpperCase(), pool.toUpperCase()}).set(seqOffset);}
+        if (availCnt >= 0) {availableRows.labels(new String [] {host,String.valueOf(port),env.toUpperCase(), pool.toUpperCase()}).set(availCnt);}
 
 
     }
@@ -118,16 +117,23 @@ public class Exporter {
         }
     }
     public void increaseRequests(String env, String pool,String method){  //+1 increment got get requests metric
-        requestsCount.labels(new String [] {host,String.valueOf(port),env,pool,method }).inc();
+        requestsCount.labels(new String [] {host,String.valueOf(port),env.toUpperCase(), pool.toUpperCase(), method.toUpperCase() }).inc();
     }
 
     public void increaseLatency(String env, String pool, String method, Instant start){  //Save response time
         Instant end = Instant.now();
         Duration timeElapsed = Duration.between(start, end);
-        latency.labels(new String [] {host,String.valueOf(port),env,pool,method }).inc(timeElapsed.toNanos()/1000 );
+        latency.labels(new String [] {host,String.valueOf(port),env.toUpperCase(), pool.toUpperCase(), method.toUpperCase() }).inc(timeElapsed.toNanos()/1000 );
     }
     private int getAvailableRows (String schema, String pool){
         if (!isCalcAVRows) return -1;
         return ((Long)this.jdbcOperations.queryForObject("SELECT COUNT (locked) FROM " + schema + "." +pool + "  where locked != true", Long.class)).intValue();
+    }
+    public void removeMetrics(String env, String pool){
+        totalRows.remove(new String [] {host,String.valueOf(port),env.toUpperCase(), pool.toUpperCase() });
+        availableRows.remove(new String [] {host,String.valueOf(port),env.toUpperCase(), pool.toUpperCase()});
+        currentOffset.remove(new String [] {host,String.valueOf(port),env.toUpperCase(), pool.toUpperCase()});
+
+
     }
 }

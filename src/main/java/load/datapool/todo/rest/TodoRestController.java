@@ -28,9 +28,9 @@ public final class TodoRestController {
     private final H2Template jdbcOperations;
     private final Exporter exp;
     private final LockerService lockerService;
-
     private String extErrText = ""; //Extended error cause
     private int retryGetNextCount = 0;// retry if skip seq
+    private int maxTableNameLength = 16;
     private int maxSequenceLength = 25;
     private int maxIndexLength = 25;
     private int maxKeyColumnLength = 1500;
@@ -166,9 +166,15 @@ public final class TodoRestController {
                                           @RequestBody String text) {
         Instant start = Instant.now();
         exp.increaseRequests(env, pool, "put-value");
-
         if (!lockerService.poolExist(env, pool)) {
-            createTable(env, pool);
+            if (!createTable(env, pool)){
+                if (pool.length() > maxTableNameLength)
+                {
+                    exp.increaseLatency(env, pool, "put-value", start);
+                    return ResponseEntity.badRequest().body("Datapool name can't be longer then " +
+                                                            maxTableNameLength + " simbols. Your value is " + pool);
+                }
+            }
         }
 
         try {
@@ -301,17 +307,24 @@ public final class TodoRestController {
             return ResponseEntity.badRequest().body(new String("File is empty!"));
         }
         if (override) {
-            if (lockerService.poolExist(env, pool))
+            if (lockerService.poolExist(env, pool)){
+                exp.removeMetrics(env, pool);
                 dropTable(env, pool);
-            createTable(env, pool);
+            }
         }
+
+        if (!createTable(env, pool)){
+            if (pool.length() > maxTableNameLength)
+            {
+                exp.increaseLatency(env, pool, "upload-csv-as-json", start);
+                return ResponseEntity.badRequest().body("Datapool name can't be longer then " +
+                        maxTableNameLength + " simbols. Your value is " + pool);
+            }
+        }
+
         // parse CSV file
         BufferedReader reader = null;
         String notValidRows = "";
-
-        if (!lockerService.poolExist(env, pool)) {
-            createTable(env, pool);
-        }
 
         try {
             reader = new BufferedReader(new InputStreamReader(file.getInputStream()));
@@ -375,8 +388,17 @@ public final class TodoRestController {
     }
 
     private boolean createTable(String env, String pool) {
+        if (pool.length() > maxTableNameLength)
+        {
+            logger.error("Datapool name can't be longer then {} simbols. Your value is {}", maxTableNameLength, pool);
+            return false;
+        }
+
+        if (lockerService.poolExist(env, pool)) {
+            logger.info("Datapool {} already exists.", pool);
+            return true;
+        }
         lockerService.putPool(env, pool);
-        boolean res = false;
         try {
             this.jdbcOperations.execute("" +
                     "create table " + env + "." + pool +
@@ -407,7 +429,6 @@ public final class TodoRestController {
 
     private boolean dropTable(String env, String pool) {
         lockerService.deletePool(env, pool);
-        boolean res = false;
         try {
             this.jdbcOperations.execute("drop table if exists " + env + "." + pool + ";");
             String indexPrefix = new String("idx_" + env + "" + pool);
@@ -444,6 +465,7 @@ public final class TodoRestController {
         if (lockerService.poolExist(env, pool)) {
             try {
                 dropTable(env, pool);
+                exp.removeMetrics(env, pool);
                 return ResponseEntity.ok().body("Pool deleted successfully!");
             } catch (Exception ex) {
                 System.err.println(ex.getMessage());

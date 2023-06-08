@@ -378,6 +378,10 @@ public final class TodoRestController {
         lockerService.putPool(env, pool);
         boolean res = false;
         try {
+        	
+        	this.jdbcOperations.execute("create schema if not exists "+env+";");
+        	
+        	
             this.jdbcOperations.execute("" +
                     "create table " + env + "." + pool +
                     "(" +
@@ -453,4 +457,27 @@ public final class TodoRestController {
             return ResponseEntity.badRequest().body("Pool not found");
         }
     }
+    
+    /// reset sequence to 1 (zero point of pool)
+    @GetMapping(path = "/resetseq")
+    public ResponseEntity<Object> resetseq(@RequestParam(value = "env", defaultValue = "load") String env,
+                                          @RequestParam(value = "pool", defaultValue = "testpool") String pool) {
+       
+      
+        Long newSqValue = 1L;
+        unlockData(env,pool,"-1","",true);
+
+        try {
+        	jdbcOperations.update("ALTER SEQUENCE " + getSeqPrefix(env, pool) + "_rid" + " RESTART WITH ?", newSqValue);
+        	//fixSequenceState(env, pool, newSqValue);
+        	
+        } catch (Exception e) {
+            logger.error(e.getMessage());
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+        return ResponseEntity.ok(new String((long) 1 + " Sequence reseted for pool"+pool));
+    }
+
+    
+    
 }

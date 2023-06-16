@@ -32,6 +32,8 @@ public class H2Template extends JdbcTemplate {
         dataSource.setPassword(pwd);
         dataSource.setMaxIdle(maxIdle);
         setDataSource(dataSource);
+        logger.info("H2 url: " + dataSource.getUrl());
+        logger.info("H2 MaxIdle: " + dataSource.getMaxIdle());
     }
 
 }

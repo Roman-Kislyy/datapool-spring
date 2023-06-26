@@ -88,7 +88,6 @@ public class BaseLockerService implements LockerService {
             if (lockedRows.equals(0))
                 return;
 
-//            final int batchRows = 10000;
             final String selectRids = "SELECT rid FROM " + fullTableName + " WHERE rid > ? AND locked = true limit ?";
             final Object[] args = new Object[]{0, batchRows};
             final int ridIndex = 1;
@@ -137,8 +136,6 @@ public class BaseLockerService implements LockerService {
     private Integer maxRid(String fullTableName) {
         final String selectMaxRid = "SELECT max(rid) FROM " + fullTableName;
         Integer maxRid = jdbcOperations.queryForObject(selectMaxRid, Integer.class);
-//        if (maxRid == null)
-//            logger.error("Table " + fullTableName + ": not found maxRid");
         return maxRid;
     }
 

@@ -1,6 +1,16 @@
 # Changelog
 Service for creating and utilizing test data pools via REST API.
 
+## [1.6.4]
+
+### Added
+
+- Resetting datapool sequence has done. /resetseq
+
+### Changed
+
+- Threads properties was optimized
+
 ## [1.6.3]
 
 ### Changed

@@ -77,26 +77,8 @@ public final class TodoRestController {
             if (restartPoolLock.tryLock()) {
                 if (fixSequenceState(env, pool, sq)) {
                     System.out.println("Sequence reseted " + fullPoolName + " last value = " + sq
-//                        + ". Retry count = " + retryGetNextCount
                     );
 
-                /*
-                todo так как контроллер - это бин, а бин - синглтон, то retryGetNextCount считает сумму рестартов по всем пулам без разбора.
-                Также тут не учитываются временные промежутки.
-                Таким образом, мы просто шлём badRequest без явных оснований.
-                Пока вырезаю эту фичу.
-                 */
-
-//                if (retryGetNextCount >= retryGetNextMaxCount) {
-//                    retryGetNextCount = 0;
-//                    exp.increaseLatency(env, pool, "get-next-value", start);
-//                    return ResponseEntity.badRequest().body(new String(e.getMessage() + "\\\n"
-//                            + extErrText
-//                            + "\\\n Datapool may be empty."
-//                            + "\\\n Very often reset sequense: " + retryGetNextCount
-//                            + " for " + env + "." + pool + " last value = " + sq));
-//                }
-//                retryGetNextCount++;
                 } else {
                     restartPoolLock.unlock();
                     exp.increaseLatency(env, pool, "get-next-value", start);
@@ -156,7 +138,6 @@ public final class TodoRestController {
             System.err.println(e.getMessage() + "\\\n" + extErrText);
             return false;
         }
-        //return false;
     }
 
     @PostMapping(path = "/put-value")
@@ -199,12 +180,11 @@ public final class TodoRestController {
                                              @RequestParam(value = "rid", defaultValue = "-1") String sRid,
                                              @RequestParam(value = "search-key", defaultValue = "") String searchKey,
                                              @RequestParam(value = "unlock-all", defaultValue = "false") boolean unlockAll) {
-
+        Instant start = Instant.now();
+        exp.increaseRequests(env, pool, "unlock");
         if (!lockerService.poolExist(env, pool))
             return tableNotFindResponse(fullPoolName(env, pool));
 
-        Instant start = Instant.now();
-        exp.increaseRequests(env, pool, "unlock");
         Long rid;
 
         //Check rid valid value
@@ -400,6 +380,10 @@ public final class TodoRestController {
         }
         lockerService.putPool(env, pool);
         try {
+        	
+        	this.jdbcOperations.execute("create schema if not exists "+env+";");
+        	
+        	
             this.jdbcOperations.execute("" +
                     "create table " + env + "." + pool +
                     "(" +
@@ -475,4 +459,26 @@ public final class TodoRestController {
             return ResponseEntity.badRequest().body("Pool not found");
         }
     }
+    
+    // reset sequence to 1 (zero point of pool)
+    @GetMapping(path = "/resetseq")
+    public ResponseEntity<Object> resetseq(@RequestParam(value = "env", defaultValue = "load") String env,
+                                          @RequestParam(value = "pool", defaultValue = "testpool") String pool) {
+        Instant start = Instant.now();
+        exp.increaseRequests(env, pool, "resetseq");
+        Long newSqValue = 1L;
+
+        try {
+        	jdbcOperations.update("ALTER SEQUENCE " + getSeqPrefix(env, pool) + "_rid" + " RESTART WITH ?", newSqValue);
+        } catch (Exception e) {
+            logger.error(e.getMessage());
+            exp.increaseLatency(env, pool, "resetseq", start);
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+        exp.increaseLatency(env, pool, "resetseq", start);
+        return ResponseEntity.ok(new String("Row id sequence has been reseted for pool "+pool));
+    }
+
+    
+    
 }

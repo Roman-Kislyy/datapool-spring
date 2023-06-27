@@ -1,11 +1,14 @@
 package load.datapool.service;
 
 import lombok.Getter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Arrays;
 
 @Getter
 public class BaseLocker implements Locker {
+    private final Logger logger = LoggerFactory.getLogger(BaseLocker.class);
 
     private final String poolName;
     private boolean[] list;
@@ -63,6 +66,7 @@ public class BaseLocker implements Locker {
 
     @Override
     public int firstBiggerUnlockedId(int id) {
+        logger.debug("Pool {}: id = {}, startIndex = {}, size = {}", getPoolName(), id, startIndex, size);
         id-= startIndex;
         if (id >= size) return 0;   // not exist
         for (int i = id; i < list.length; i++) {

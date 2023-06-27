@@ -103,33 +103,24 @@ public final class TodoRestController {
     }
 
     private boolean fixSequenceState(String env, String pool, Long currentValue) {
-        String fullPullName = fullPoolName(env, pool);
         if (currentValue < 0) return false; //Some undefined sequence error
         try {
-//            long operation
-//            Long sqMax = jdbcOperations.queryForObject("SELECT nvl(max (rid), 0) FROM " + env + "." + pool + "  where rid >= ? and locked = false", new Object[]{currentValue}, Long.class); //Is exist values forward
             int sqMax = lockerService.firstBiggerUnlockedId(env, pool, currentValue.intValue());
             Long newSqValue = 0L;
             if (sqMax == 0) //Need reset sequence to start, no values forward
             // You can change for sequence CYCLE type if slow puts are planing
             {
-//                long operation
-//                newSqValue = jdbcOperations.queryForObject("SELECT nvl(min (rid), 0) FROM " + env + "." +pool + " where rid > 0 and locked = false",  Long.class);
-                newSqValue = (long) lockerService.firstUnlockRid(env, pool);
+                 newSqValue = (long) lockerService.firstUnlockRid(env, pool);
                 if (newSqValue == 0) {
                     extErrText += "May be table is empty." + " ";
                     newSqValue = 1L;
                     jdbcOperations.update("ALTER SEQUENCE " + getSeqPrefix(env, pool) + "_rid" + " RESTART WITH ?", newSqValue);
                     return false;
-                } //May be table is empty
+                }
                 jdbcOperations.update("ALTER SEQUENCE " + getSeqPrefix(env, pool) + "_rid" + " RESTART WITH ?", newSqValue);
                 return true;
-            } else {//need reset sequence next
-                newSqValue = this.jdbcOperations.queryForObject("SELECT nvl(min (rid),0) FROM " + env + "." + pool + " where  locked != true", Long.class);
-                if (newSqValue == 0) {
-                    extErrText += "Some errors when try to make sequence offset." + " ";
-                    return false;
-                } //May be table is empty
+            } else {//need reset sequence to next available value
+                newSqValue = Long.valueOf(sqMax);
                 this.jdbcOperations.update("ALTER SEQUENCE " + getSeqPrefix(env, pool) + "_rid" + " RESTART WITH ?", newSqValue);
                 return true;
             }

@@ -60,6 +60,9 @@ public final class TodoRestController {
         if (!lockerService.poolExist(env, pool))
             return tableNotFindResponse(fullPoolName);
 
+        if (lockerService.isMarkedAsEmpty(env, pool))
+            return tableIsEmptyResponse(fullPoolName);
+
         try {
             sq = jdbcOperations.queryForObject("select nextval (?)", new String[]{getSeqPrefix(env, pool) + "_rid"}, Long.class);
             ResponseEntity<String> res = ResponseEntity.ok(jdbcOperations.queryForObject("select rid, text, locked from " + fullPoolName + " where rid = ? and locked = false limit 1",
@@ -72,17 +75,15 @@ public final class TodoRestController {
             }
             exp.increaseLatency(env, pool, "get-next-value", start);
             return res;
-
         } catch (EmptyResultDataAccessException e) {
             if (restartPoolLock.tryLock()) {
                 if (fixSequenceState(env, pool, sq)) {
-                    System.out.println("Sequence reseted " + fullPoolName + " last value = " + sq
-                    );
-
+                    System.out.println("Sequence reseted for " + fullPoolName + " was value = " + sq);
                 } else {
                     restartPoolLock.unlock();
                     exp.increaseLatency(env, pool, "get-next-value", start);
-                    return ResponseEntity.badRequest().body(new String(e.getMessage() + "\\\n" + extErrText + "\\\n ERROR " + env + "." + pool + " sequence = " + sq));
+//                    return ResponseEntity.badRequest().body(new String(e.getMessage() + "\\\n" + extErrText + "\\\n ERROR " + env + "." + pool + " sequence = " + sq));
+                    return tableIsEmptyResponse(fullPoolName);
                 }
                 restartPoolLock.unlock();
             } else {
@@ -112,7 +113,7 @@ public final class TodoRestController {
             {
                  newSqValue = (long) lockerService.firstUnlockRid(env, pool);
                 if (newSqValue == 0) {
-                    extErrText += "May be table is empty." + " ";
+                    lockerService.markAsEmpty(env, pool);
                     newSqValue = 1L;
                     jdbcOperations.update("ALTER SEQUENCE " + getSeqPrefix(env, pool) + "_rid" + " RESTART WITH ?", newSqValue);
                     return false;
@@ -177,7 +178,6 @@ public final class TodoRestController {
             return tableNotFindResponse(fullPoolName(env, pool));
 
         Long rid;
-
         //Check rid valid value
         try {
             rid = Long.parseLong(sRid.trim());  //<-- String to long here
@@ -204,13 +204,12 @@ public final class TodoRestController {
                     }
                 }
             }
-
         } catch (DataAccessException e) {
             exp.increaseLatency(env, pool, "unlock", start);
             return ResponseEntity.badRequest().body(new String(e.getMessage() + "\\\n" + extErrText + "\\\n ERROR " + env + "." + pool));
         }
         exp.increaseLatency(env, pool, "unlock", start);
-        return ResponseEntity.ok(new String("Unlock successfully!"));
+        return ResponseEntity.ok(new String("Unlocked successfully!"));
     }
 
     @GetMapping(path = "/search-by-key")
@@ -326,15 +325,17 @@ public final class TodoRestController {
                     json += "}";
                     this.jdbcOperations.update("insert into " + env + "." + pool + "(rid, text, locked) values (nextval (?),?,?);", getSeqPrefix(env, pool) + "_max", json, false);
                     successCnt++;
-                    //System.out.println(json);
                 }
-
                 // read next line
                 line = reader.readLine();
             }
             reader.close();
 
-            lockerService.putPool(env, pool, successCnt);
+            if (override) {
+                lockerService.putPool(env, pool, successCnt);
+            }else{
+                lockerService.add(env, pool, successCnt);
+            }
 
             if (!notValidRows.equals("")) {
                 exp.increaseLatency(env, pool, "upload-csv-as-json", start);
@@ -350,6 +351,12 @@ public final class TodoRestController {
 
     private ResponseEntity<String> tableNotFindResponse(String poolName) {
         return ResponseEntity.badRequest().body("Table " + poolName + " not found in lockerService");
+    }
+
+    private ResponseEntity<String> tableIsEmptyResponse(String poolName) {
+        return ResponseEntity.badRequest().body("Incorrect result size: expected 1, actual 0\\\n" +
+                "May be table is empty. \\\n" +
+                " ERROR " + poolName);
     }
 
     private String getSeqPrefix(String env, String pool) {
@@ -373,8 +380,6 @@ public final class TodoRestController {
         try {
         	
         	this.jdbcOperations.execute("create schema if not exists "+env+";");
-        	
-        	
             this.jdbcOperations.execute("" +
                     "create table " + env + "." + pool +
                     "(" +
@@ -417,17 +422,6 @@ public final class TodoRestController {
             System.err.println(e.getMessage());
             return false;
         }
-    }
-
-    private boolean isTableNotFound(Throwable cause) {
-        Pattern pattern = Pattern.compile("Table .* not found");
-        Matcher matcher = pattern.matcher(cause.getMessage());
-
-        if (matcher.find()) {
-            System.out.println("isTableNotFound function = true");
-            return true;
-        }
-        return false;
     }
 
     private String fullPoolName(String env, String pool) {

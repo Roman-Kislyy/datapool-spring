@@ -6,6 +6,7 @@ public interface LockerService {
     void putPool(String env, String pool, int size);
     void deletePool(String env, String pool);
     void add(String env, String pool);
+    void add(String env, String pool, int count);
     void lock(String env, String pool, int rid);
     void unlock(String env, String pool, int rid);
     void unlock(String env, String pool, String searchKey);
@@ -14,5 +15,8 @@ public interface LockerService {
     int firstBiggerUnlockedId(String env, String pool, int id);
     void initLocks();
     boolean poolExist(String env, String pool);
+    boolean isMarkedAsEmpty(String env, String pool);
+    void markAsEmpty(String env, String pool);
+    void markAsNotEmpty(String env, String pool);
 
 }

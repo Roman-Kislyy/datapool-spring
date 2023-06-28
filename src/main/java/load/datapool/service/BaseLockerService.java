@@ -141,6 +141,9 @@ public class BaseLockerService implements LockerService {
 
     @Override
     public boolean poolExist(String env, String pool) {
+        if (lockers.get(tableService.fullName(env, pool)) != null){
+            return true;
+        }
         final int trueNum = 1;
         AtomicInteger exist = new AtomicInteger(0);
         try {
@@ -155,7 +158,29 @@ public class BaseLockerService implements LockerService {
         } catch (Exception e) {
             e.printStackTrace();
         }
+        if (exist.get() == 1){ //IF there is pool in db, but there is not in lockers
+            selectLocksFromTable(env, pool); //Load locks
+            logger.warn("{} was addition loaded. Check DB structure and app lockers cache.", tableService.fullName(env, pool));
+        }
         return exist.get() == trueNum;
+    }
+
+    @Override
+    public boolean isMarkedAsEmpty(String env, String pool) {
+        pool = tableService.fullName(env, pool);
+        return lockers.get(pool).isMarkedAsEmpty();
+    }
+
+    @Override
+    public void markAsEmpty(String env, String pool) {
+        pool = tableService.fullName(env, pool);
+        lockers.get(pool).markAsEmpty();
+    }
+
+    @Override
+    public void markAsNotEmpty(String env, String pool) {
+        pool = tableService.fullName(env, pool);
+        lockers.get(pool).markAsNotEmpty();
     }
 
     @Override
@@ -178,8 +203,14 @@ public class BaseLockerService implements LockerService {
 
     @Override
     public void add(String env, String pool) {
+        add(env, pool, 1);
+    }
+
+    @Override
+    public void add(String env, String pool, int count) {
         pool = tableService.fullName(env, pool);
-        lockers.get(pool).add();
+        lockers.get(pool).markAsNotEmpty();
+        lockers.get(pool).add(count);
     }
 
     @Override
@@ -194,6 +225,7 @@ public class BaseLockerService implements LockerService {
         pool = tableService.fullName(env, pool);
         jdbcOperations.update("update " + pool + " set locked = false where rid = ?", rid);
         lockers.get(pool).unlock(rid);
+        lockers.get(pool).markAsNotEmpty();
     }
 
     @Override
@@ -202,6 +234,7 @@ public class BaseLockerService implements LockerService {
         jdbcOperations.update("update " + pool + " set locked = false where searchkey = ?", searchKey);
         Integer rid = jdbcOperations.queryForObject("SELECT rid FROM " + pool + " WHERE searchkey = ? limit 1", Integer.class, searchKey);
         if (rid != null) lockers.get(pool).unlock(rid);
+        lockers.get(pool).markAsNotEmpty();
     }
 
     @Override
@@ -209,6 +242,7 @@ public class BaseLockerService implements LockerService {
         pool = tableService.fullName(env, pool);
         jdbcOperations.update("update " + pool + " set locked = false where locked is null; update " + pool + " set locked = false where locked =true;"); //Fast variant
         lockers.get(pool).unlockAll();
+        lockers.get(pool).markAsNotEmpty();
     }
 
     @Override

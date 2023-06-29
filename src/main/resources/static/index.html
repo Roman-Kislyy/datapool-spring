@@ -25,6 +25,7 @@
             <li><a href="#SearchOne">Поиск по ключу</a></li>
             <li><a href="#Unlock">Разблокировка записи</a></li>
             <li><a href="#Delete">Удаление пула</a></li>
+            <li><a href="#ResetSeq">Начать читать пул сначала</a></li>
 
 
         </ul>
@@ -50,13 +51,13 @@
 <p>Если пул существует, он будет удален и создан заново.</p>
 <p>Запрос:</p>
 <blockquote>
-    <p><em><code>curl -F 'file=@test.csv' "http://localhost:8080/api/v1/upload-csv-as-json?env=load&amp;pool=demo_clients&amp;override=<strong>true</strong>"&delimiter=%09<br /></code></em></p>
+    <p><em><code>curl -F 'file=@test.csv' "http://localhost:8080/api/v1/upload-csv-as-json?env=load&amp;pool=demo_clients&amp;override=<strong>true</strong>&delimiter=;"<br /></code></em></p>
 </blockquote>
 <h4><a id="CSVAppend"></a>С добавлением данных</h4>
 <p>Если пул существует, записи добавятся в конец текущего пула.</p>
 <p>Запрос:</p>
 <blockquote>
-    <p><code><em>curl -F 'file=@test.csv' "http://localhost:8080/api/v1/upload-csv-as-json?env=load&amp;pool=demo_clients&amp;override=<strong>false</strong>"&delimiter=;<br /></em></code></p>
+    <p><code><em>curl -F 'file=@test.csv' "http://localhost:8080/api/v1/upload-csv-as-json?env=load&amp;pool=demo_clients&amp;override=<strong>false</strong>&delimiter=;"<br /></em></code></p>
 </blockquote>
 <p>Файл выглядит примерно так</p>
 <p><img src="./csv-view-1.jpg" alt="" /></p>
@@ -67,7 +68,7 @@
 <p>Например, это необходимо для организации пула данных, которые могут использоваться только один раз (номер карты, логин и пароль)</p>
 <p>Запрос:</p>
 <blockquote>
-    <p><em><code>curl <a href="http://localhost:8080/api/v1/get-next-value?pool=demo_clients&amp;locked=true">http://localhost:8080/api/v1/get-next-value?pool=demo_clients&amp;locked=true</a></code></em></p>
+    <p><em><code>curl <a href="http://localhost:8080/api/v1/get-next-value?pool=demo_clients&amp;locked=true">"http://localhost:8080/api/v1/get-next-value?pool=demo_clients&amp;locked=true"</a></code></em></p>
 </blockquote>
 <p>Ответ:</p>
 <blockquote>
@@ -82,7 +83,7 @@
 <h4><a id="GetnextNoLock"></a>Без блокировки</h4>
 <p>Запрос:</p>
 <blockquote>
-    <p><em><code>curl <a href="http://localhost:8080/api/v1/get-next-value?pool=demo_clients&amp;locked=false">http://localhost:8080/api/v1/get-next-value?pool=demo_clients&amp;locked=false</a></code></em></p>
+    <p><em><code>curl <a href="http://localhost:8080/api/v1/get-next-value?pool=demo_clients&amp;locked=false">"http://localhost:8080/api/v1/get-next-value?pool=demo_clients&amp;locked=false"</a></code></em></p>
 </blockquote>
 <p>Ответ:</p>
 <blockquote>
@@ -123,7 +124,7 @@
 </blockquote>
 <p>Делаем поиск (search-by-key):</p>
 <blockquote>
-    <p><em><code>curl <a href="http://localhost:8080/api/v1/search-by-key?pool=demo_put_clients&amp;locked=true&amp;search-key=1ea5f0a9-8f77-4c37-9c16-11f8bc18d258">http://localhost:8080/api/v1/search-by-key?pool=demo_put_clients&locked=true&search-key=1ea5f0a9-8f77-4c37-9c16-11f8bc18d258</a></code></em></p>
+    <p><em><code>curl <a href="http://localhost:8080/api/v1/search-by-key?pool=demo_put_clients&amp;locked=true&amp;search-key=1ea5f0a9-8f77-4c37-9c16-11f8bc18d258">"http://localhost:8080/api/v1/search-by-key?pool=demo_put_clients&locked=true&search-key=1ea5f0a9-8f77-4c37-9c16-11f8bc18d258"</a></code></em></p>
     <p><code>{"rid":54,"searchkey":1ea5f0a9-8f77-4c37-9c16-11f8bc18d258,"values":{"par1":"23331234","par2":"input_data"},"locked":true}</code></p>
 </blockquote>
 </li>
@@ -138,7 +139,7 @@
 </ol>
 <p>Пример использования:</p>
 <blockquote>
-    <p>Запрос - <em><code>curl <a href="http://localhost:8080/api/v1/search-by-key?pool=demo_put_clients&amp;locked=true&amp;search-key=1ea5f0a9-8f77-4c37-9c16-11f8bc18d258">http://localhost:8080/api/v1/search-by-key?pool=demo_put_clients&locked=true&search-key=1ea5f0a9-8f77-4c37-9c16-11f8bc18d258</a></code></em></p>
+    <p>Запрос - <em><code>curl <a href="http://localhost:8080/api/v1/search-by-key?pool=demo_put_clients&amp;locked=true&amp;search-key=1ea5f0a9-8f77-4c37-9c16-11f8bc18d258">"http://localhost:8080/api/v1/search-by-key?pool=demo_put_clients&locked=true&search-key=1ea5f0a9-8f77-4c37-9c16-11f8bc18d258"</a></code></em></p>
     <p>Ответ - <code>{"rid":54,"searchkey":1ea5f0a9-8f77-4c37-9c16-11f8bc18d258,"values":{"par1":"23331234","par2":"input_data"},"locked":true}</code></p>
 </blockquote>
 
@@ -154,17 +155,26 @@
 </p>
 <p>Пример использования:</p>
 <blockquote>
-    <p>Запрос - <em><code>curl <a href="http://localhost:8080/api/v1/unlock?pool=demo_put_clients&amp;unlock-all=true">http://localhost:8080/api/v1/unlock?pool=demo_put_clients&unlock-all=true</a></code></em></p>
-    <p>Запрос - <em><code>curl <a href="http://localhost:8080/api/v1/unlock?pool=demo_put_clients&amp;rid=10">http://localhost:8080/api/v1/unlock?pool=demo_put_clients&rid=10</a></code></em></p>
-    <p>Запрос - <em><code>curl <a href="http://localhost:8080/api/v1/unlock?pool=demo_put_clients&amp;search-key=appSequense10">http://localhost:8080/api/v1/unlock?pool=demo_put_clients&search-key=appSequense10</a></code></em></p>
+    <p>Запрос - <em><code>curl -XPOST <a href="http://localhost:8080/api/v1/unlock?pool=demo_put_clients&amp;unlock-all=true">"http://localhost:8080/api/v1/unlock?pool=demo_put_clients&unlock-all=true"</a></code></em></p>
+    <p>Запрос - <em><code>curl -XPOST <a href="http://localhost:8080/api/v1/unlock?pool=demo_put_clients&amp;rid=10">"http://localhost:8080/api/v1/unlock?pool=demo_put_clients&rid=10"</a></code></em></p>
+    <p>Запрос - <em><code>curl -XPOST <a href="http://localhost:8080/api/v1/unlock?pool=demo_put_clients&amp;search-key=appSequense10">"http://localhost:8080/api/v1/unlock?pool=demo_put_clients&search-key=appSequense10"</a></code></em></p>
     <p>Ответ - <code>Unlock successfully!</code></p>
 </blockquote>
 <h2><a id="Delete"></a>Удаление пула</h2>
 <p>Метод /drop-pool удаляет пул из БД.</p>
 <p>Пример использования:</p>
 <blockquote>
-    <p>Запрос: <em><code>curl -X DELETE <a href="http://localhost:8080/api/v1/drop-pool?env=load&amp;pool=demo_pool">http://localhost:8080/api/v1/drop-pool?env=load&pool=demo_pool</a></code></em></p>
+    <p>Запрос: <em><code>curl -X DELETE <a href="http://localhost:8080/api/v1/drop-pool?env=load&amp;pool=demo_clients">"http://localhost:8080/api/v1/drop-pool?env=load&pool=demo_clients"</a></code></em></p>
 </blockquote>
+
+<h2><a id="ResetSeq"></a>Начать читать пул сначала</h2>
+<p>Метод /resetseq сбрасывает на начало (sequence = 1) указатель на текущее положение в пуле.</p>
+<p>Может использоваться для сброса пула перед тестом и быть полезным для повторяемости результатов тестирования.</p>
+<p>Пример использования:</p>
+<blockquote>
+    <p>Запрос: <em><code>curl -X GET <a href="http://localhost:8080/api/v1/resetseq?env=load&amp;pool=demo_clients">"http://localhost:8080/api/v1/resetseq?env=load&pool=demo_clients"</a></code></em></p>
+</blockquote>
+
 <h2><a id="JMXExample"></a>Пример использования в тест-плане Jmeter</h2>
 <p>Текущий пример в файле &lt;repo&gt;\src\test\test.jmx</p>
 <p>Версия jmx предварительная и будет улучшена.</p>
@@ -196,7 +206,7 @@
 <h4>Минимальные метрики. Всего строк, текущая позиция курсора (не считает разблокированные строки), количество вызовов и длительность.</h4>
 <p>Запрос:</p>
 <blockquote>
-    <p><em><code>curl <a href="http://localhost:8080/metrics">http://localhost:8080/metrics</a></code></em></p>
+    <p><em><code>curl <a href="http://localhost:8080/metrics">"http://localhost:8080/metrics"</a></code></em></p>
 </blockquote>
 <p>Ответ:</p>
 <blockquote>
@@ -223,7 +233,7 @@
 <h4>Полные метрики (всего строк в пуле, текущая позиция курсора, количество разблокированных строк)</h4>
 <p>Запрос:</p>
 <blockquote>
-    <p><em><code>curl <a href="http://localhost:8080/metrics?calculateUnlocks=true">http://localhost:8080/metrics?calculateUnlocks=true</a></code></em></p>
+    <p><em><code>curl <a href="http://localhost:8080/metrics?calculateUnlocks=true">"http://localhost:8080/metrics?calculateUnlocks=true"</a></code></em></p>
 </blockquote>
 <p>Ответ:</p>
 <blockquote>

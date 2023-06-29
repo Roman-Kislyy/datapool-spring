@@ -9,6 +9,7 @@ Service for creating and utilizing test data pools via REST API.
 # Start service
 
 `cd ./bin/`
+
 `java -jar datapool-service-<version>.jar`
 
 

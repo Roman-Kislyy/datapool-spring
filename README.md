@@ -1,33 +1,16 @@
 # datapool-spring
 Service for creating and utilizing test data pools via REST API.
 
-# Useful links Spring REST
+# View. How it's work
 
-http://zetcode.com/springboot/postgresql/#:~:text=The%20spring-boot-starter-data-jpa%20is%20a,executable%20JAR%20or%20WAR%20archives.
+![](src/main/resources/static/schema.jpg)
 
-https://gitlab.com/akosarev/tutorial-spring-webmvc-rest-api/-/blob/master/src/main/java/name/alexkosarev/tutorials/todo/rest/TodoRestController.java
-
-https://spring.io/guides/gs/rest-service/
-
-https://alexkosarev.name/2019/03/08/rest-api-with-spring/
-
-https://www.baeldung.com/spring-boot-h2-database
-
-# Useful links H2 DB
-
-http://www.h2database.com/html/tutorial.html#using_server
-
-https://www.tutorialspoint.com/h2_database/h2_database_create.htm
-
-# Build with maven
-
-mvn clean verify
 
 # Start service
 
 cd ./bin/
 
-java -jar datapool-service-1.0.0.jar
+java -jar datapool-service-<version>.jar
 
 # Configure
 
@@ -35,9 +18,24 @@ java -jar datapool-service-1.0.0.jar
 
 # Documentation
 
-./src/main/resources/static/index.html
+- [Docs htmlpreview](https://htmlpreview.github.io/?https://github.com/Roman-Kislyy/datapool-spring/blob/master/src/main/resources/static/index.html)
+- [Local](http://localhost:8080/) You can open web documentaion everytime. Simple open http://localhost:8080/ where datapool has been started.
+- [Or open resourse](src/main/resources/static/index.html)
 
+# Build with maven
 
-# View
+mvn clean verify
 
-![](src/main/resources/static/schema.jpg)
+# Useful links H2 DB
+
+http://www.h2database.com/html/tutorial.html#using_server
+
+https://www.tutorialspoint.com/h2_database/h2_database_create.htm
+
+# Useful links Spring REST
+
+https://spring.io/guides/gs/rest-service/
+
+https://alexkosarev.name/2019/03/08/rest-api-with-spring/
+
+https://www.baeldung.com/spring-boot-h2-database

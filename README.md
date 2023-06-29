@@ -1,10 +1,9 @@
 # datapool-spring
 Service for creating and utilizing test data pools via REST API.
 
-# View. How it's work
+# How it's work
 
 ![](src/main/resources/static/schema.jpg)
-
 
 # Start service
 
@@ -12,6 +11,19 @@ Service for creating and utilizing test data pools via REST API.
 
 `java -jar datapool-service-<version>.jar`
 
+# Use it
+
+- Download demo data pool 
+
+`curl https://raw.githubusercontent.com/Roman-Kislyy/datapool-spring/main/src/test/test.csv --output test.csv -k` 
+
+- Upload file to local datapool service 
+
+`curl -F 'file=@test.csv' "http://localhost:8080/api/v1/upload-csv-as-json?env=load&pool=demo_clients&override=true&delimiter=,"`
+
+- Get value from datapool service `curl "http://localhost:8080/api/v1/get-next-value?pool=demo_clients&locked=false" -s`
+
+![](src/main/resources/static/demo_use.jpg)
 
 # Configure
 

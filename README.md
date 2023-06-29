@@ -8,13 +8,13 @@ Service for creating and utilizing test data pools via REST API.
 
 # Start service
 
-cd ./bin/
+`cd ./bin/`
+`java -jar datapool-service-<version>.jar`
 
-java -jar datapool-service-<version>.jar
 
 # Configure
 
-./bin/application.properties
+[bin/application.properties](bin/application.properties)
 
 # Documentation
 
@@ -24,7 +24,7 @@ java -jar datapool-service-<version>.jar
 
 # Build with maven
 
-mvn clean verify
+`mvn clean verify`
 
 # Useful links H2 DB
 

@@ -28,6 +28,7 @@ public class BaseLocker implements Locker {
         this.size = size;
         bufferSize = Math.max(bufferSize, size / 10);
         list = new boolean[size + bufferSize];
+        logger.debug("Create locker {poolName}: size = {}, bufferSize = {}, total length = {}", this.poolName, this.size, bufferSize, list.length);
     }
 
     @Override
@@ -59,8 +60,11 @@ public class BaseLocker implements Locker {
 
     @Override
     public int firstUnlockId() {
+        logger.debug("Pool {}: size = {}", size);
         for (int i = 0; i < size; i++) {
             if (!list[i]) {     // not locked
+                logger.debug("Now: {} = {}",i, String.valueOf(list[i]));
+                logger.debug("Next: {} = {}",+ startIndex, String.valueOf(list[+ startIndex]));
                 return i + startIndex;
             }
         }
@@ -74,14 +78,13 @@ public class BaseLocker implements Locker {
         if (id >= size) return 0;   // not exist
         for (int i = id; i < size; i++) {
             if (!list[i]) {
-                logger.debug("Now:" + String.valueOf(list[i]));
-                logger.debug("Next: " + String.valueOf(list[i + 1]));
+                logger.debug("Now: {} = {}",i, String.valueOf(list[i]));
+                logger.debug("Next: {} = {}",+ startIndex, String.valueOf(list[+ startIndex]));
                 return i + startIndex;
             }
         }
         return 0;
     }
-
     @Override
     public boolean isMarkedAsEmpty() {
         return this.markedAsEmpty;

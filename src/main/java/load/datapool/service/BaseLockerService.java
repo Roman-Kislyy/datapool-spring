@@ -74,7 +74,6 @@ public class BaseLockerService implements LockerService {
         try {
             if (!containsColumns(schema, tableName))
                 return;
-
             Locker locker;
             Integer maxRid = maxRid(fullTableName);
             if (maxRid == null)

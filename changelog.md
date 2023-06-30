@@ -1,6 +1,12 @@
 # Changelog
 Service for creating and utilizing test data pools via REST API.
 
+## [1.7.2]
+
+### Changed
+
+- Added details for prometheus logging
+
 ## [1.7.1]
 
 ### Changed

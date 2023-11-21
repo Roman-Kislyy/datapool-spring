@@ -7,6 +7,7 @@ Service for creating and utilizing test data pools via REST API.
 
 - Added details for prometheus logging
 - Disable auto load datapool in BaseLockerService.poolExist
+- Add mutex in /put-value when creating new datapool
 
 ## [1.7.1]
 

@@ -93,7 +93,7 @@ public class BaseLockerService implements LockerService {
 
             final String selectRids = "SELECT rid FROM " + fullTableName + " WHERE rid > ? AND locked = true limit ?";
             final Object[] args = new Object[]{0, batchRows};
-            final int ridIndex = 1;
+            final int ridIndex = 0;
 
             for (int rows = lockedRows; rows > 0; rows -= batchRows) {
                 List<Integer> rids = jdbcOperations.queryForList(selectRids, args, Integer.class);

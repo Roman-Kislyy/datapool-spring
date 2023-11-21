@@ -40,6 +40,7 @@ public final class TodoRestController {
     private int seqCycleCache = 5;
     private final ReentrantLock restartPoolLock = new ReentrantLock();
     private ReentrantLock createPoolLock = new ReentrantLock();
+    private boolean cycleFixSequence = true; // For code debuging only. Make loop of getNextData method for sync status locked with DB
     @Autowired
     public TodoRestController(H2Template jdbcOperations, Exporter exp, LockerService lockerService) {
         this.jdbcOperations = jdbcOperations;
@@ -81,7 +82,7 @@ public final class TodoRestController {
         } catch (EmptyResultDataAccessException e) {
             if (restartPoolLock.tryLock()) {
                 if (fixSequenceState(env, pool, sq)) {
-                    System.out.println("Sequence reseted for " + fullPoolName + " was value = " + sq);
+                    logger.info("Sequence reseted for " + fullPoolName + " was value = " + sq);
                     exp.incRequestsAndLatency(env, pool, "get-next-value", "Sequence reseted", start);
                 } else {
                     restartPoolLock.unlock();
@@ -99,7 +100,10 @@ public final class TodoRestController {
                 }
             }
             exp.incRequestsAndLatency(env, pool, "get-next-value", "Achtung! Bad looping", start);
-            return getNextData(env, pool, locked);
+            if (cycleFixSequence){
+                return getNextData(env, pool, locked); // скорее всего это не работает из-за изоляции запросов в БД. Alter не меняет значение сиквенса в БД
+            }
+            return ResponseEntity.badRequest().body("Error. Need sync cache with database. Returned locked value for rid " + sq + " in " + env + "." + pool);
         } catch (DataAccessException e) {
             exp.incRequestsAndLatency(env, pool, "get-next-value", "Error data access", start);
             return ResponseEntity.badRequest().body(e.getMessage() + "\\\n" + extErrText + "\\\n ERROR " + env + "." + pool);
@@ -109,6 +113,7 @@ public final class TodoRestController {
     private boolean fixSequenceState(String env, String pool, Long currentValue) {
         if (currentValue < 0) return false; //Some undefined sequence error
         try {
+            lockerService.lock(env, pool, currentValue.intValue()); // If wrong sequence, then need to lock this rid
             int sqMax = lockerService.firstBiggerUnlockedId(env, pool, currentValue.intValue());
             Long newSqValue = 0L;
             if (sqMax == 0) //Need reset sequence to start, no values forward
@@ -125,12 +130,12 @@ public final class TodoRestController {
                 return true;
             } else {//need reset sequence to next available value
                 newSqValue = Long.valueOf(sqMax);
-                this.jdbcOperations.update("ALTER SEQUENCE " + getSeqPrefix(env, pool) + "_rid" + " RESTART WITH ?", newSqValue);
+                this.jdbcOperations.update("ALTER SEQUENCE " + getSeqPrefix(env, pool) + "_rid" + " RESTART WITH ?; ", newSqValue);
                 return true;
             }
 
         } catch (DataAccessException e) {
-            System.err.println(e.getMessage() + "\\\n" + extErrText);
+            logger.error(e.getMessage() + "\\\n" + extErrText);
             return false;
         }
     }
@@ -454,7 +459,7 @@ public final class TodoRestController {
             this.jdbcOperations.execute("DROP SEQUENCE if exists " + getSeqPrefix(env, pool) + "_rid;");
             return true;
         } catch (DataAccessException e) {
-            System.err.println(e.getMessage());
+            logger.error(e.getMessage());
             return false;
         }
     }
@@ -499,5 +504,15 @@ public final class TodoRestController {
         }
         exp.incRequestsAndLatency(env, pool, "resetseq", null, start);
         return ResponseEntity.ok(new String("Row id sequence has been reseted for pool "+pool));
+    }
+
+    @PostMapping(path = "/set-cycle-fix-sequence")
+    public ResponseEntity<Object> setCycleValue(@RequestParam(value = "cycle-fix-sequence", defaultValue = "false") boolean isCycle) {
+        this.cycleFixSequence = isCycle;
+        return ResponseEntity.ok(new String("cycleFixSequence = " + isCycle));
+    }
+    @GetMapping(path = "/get-cycle-fix-sequence")
+    public ResponseEntity<Object> getCycleValue() {
+        return ResponseEntity.ok(new String("Current value cycleFixSequence = " + this.cycleFixSequence));
     }
 }

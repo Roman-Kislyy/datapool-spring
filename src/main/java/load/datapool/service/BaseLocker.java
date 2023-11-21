@@ -43,6 +43,7 @@ public class BaseLocker implements Locker {
     }
     @Override
     public void lock(int id) {
+        if (id >= list.length) return; // Some collision
         id-= startIndex;
         list[id] = true;
     }

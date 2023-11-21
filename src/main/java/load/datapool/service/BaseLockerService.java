@@ -147,7 +147,7 @@ public class BaseLockerService implements LockerService {
         if (lockers.get(tableService.fullName(env, pool)) != null){
             return true;
         }
-// При пересоздании пула, возникает коллизия (таблица и сиквенсы еще создаются, а потоки уже пытаются загрузить в приложение этот пул)
+// При пересоздании пула под нагрузкой, возникает коллизия (таблица и сиквенсы еще создаются, а потоки уже пытаются загрузить в приложение этот пул)
         synchronized (this) {
             final int trueNum = 1;
             AtomicInteger exist = new AtomicInteger(0);

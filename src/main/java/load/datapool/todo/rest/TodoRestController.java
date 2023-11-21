@@ -16,6 +16,7 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -25,7 +26,6 @@ import java.util.regex.Pattern;
 public final class TodoRestController {
 
     private final Logger logger = LoggerFactory.getLogger(TodoRestController.class);
-
     private final H2Template jdbcOperations;
     private final Exporter exp;
     private final LockerService lockerService;
@@ -38,9 +38,8 @@ public final class TodoRestController {
     private int maxLengthNotValidRows = 25000;//Max length wrong lines for response
     private int retryGetNextMaxCount = 999999;
     private int seqCycleCache = 5;
-
     private final ReentrantLock restartPoolLock = new ReentrantLock();
-
+    private ReentrantLock createPoolLock = new ReentrantLock();
     @Autowired
     public TodoRestController(H2Template jdbcOperations, Exporter exp, LockerService lockerService) {
         this.jdbcOperations = jdbcOperations;
@@ -144,13 +143,47 @@ public final class TodoRestController {
         Instant start = Instant.now();
 
         if (!lockerService.poolExist(env, pool)) {
-            if (!createTable(env, pool)){
-                if (pool.length() > maxTableNameLength)
-                {
-                    exp.incRequestsAndLatency(env, pool, "put-value", "Pool name longer then 16 simbols", start);
-                    return ResponseEntity.badRequest().body("Datapool name can't be longer then " +
-                                                            maxTableNameLength + " simbols. Your value is " + pool);
+            // When datapool is absent
+            if (pool.length() > maxTableNameLength)
+            {
+                exp.incRequestsAndLatency(env, pool, "put-value", "Pool name longer then 16 simbols", start);
+                return ResponseEntity.badRequest().body("Datapool name can't be longer then " +
+                        maxTableNameLength + " simbols. Your value is " + pool);
+            }
+            // Raise condition point check
+            try {
+                if (createPoolLock.tryLock(15, TimeUnit.SECONDS)){
+                    logger.debug("Got lock createPoolLock for {}", pool);
+                    if (!lockerService.poolExist(env, pool)) { // May be pool was created till renta was locked
+                        if (!createTable(env, pool)){
+                            // If some errors happened
+                            createPoolLock.unlock();
+                            exp.incRequestsAndLatency(env, pool, "put-value", "Datapool creation failed", start);
+                            return ResponseEntity.badRequest().body("Datapool creation failed, undefined exception.");
+                        }else {
+                            if (lockerService.poolExist(env, pool)){ // poolExist have to rescan rows and init pool in lockers
+                                // If table in db created successfully
+                                logger.debug("Table for {} created successfully.", pool);
+                                createPoolLock.unlock();
+                            }else{
+                                createPoolLock.unlock();
+                                exp.incRequestsAndLatency(env, pool, "put-value", "Init datapool in locker failed", start);
+                                return ResponseEntity.badRequest().body("Init datapool in locker failed.");
+                            }
+                        }
+                    }else{
+                        // If somebody has created datapool before our lock
+                        createPoolLock.unlock();
+                    }
+                }else {
+                    // When tryLock timed out
+                    exp.incRequestsAndLatency(env, pool, "put-value", "Can't lock pool for create", start);
+                    return ResponseEntity.badRequest().body("Can't lock pool for create " + pool);
                 }
+            } catch (InterruptedException e) {
+                // if (createPoolLock.isLocked()) {createPoolLock.unlock();}
+                exp.incRequestsAndLatency(env, pool, "put-value", "Lock pool exception for create", start);
+                return ResponseEntity.badRequest().body("Lock pool exception for create " + pool);
             }
         }
 
@@ -364,6 +397,7 @@ public final class TodoRestController {
     }
 
     private boolean createTable(String env, String pool) {
+        logger.error("createTable");
         if (pool.length() > maxTableNameLength)
         {
             logger.error("Datapool name can't be longer then {} simbols. Your value is {}", maxTableNameLength, pool);
@@ -374,9 +408,7 @@ public final class TodoRestController {
             logger.info("Datapool {} already exists.", pool);
             return true;
         }
-        lockerService.putPool(env, pool);
         try {
-        	
         	this.jdbcOperations.execute("create schema if not exists "+env+";");
             this.jdbcOperations.execute("" +
                     "create table " + env + "." + pool +
@@ -397,10 +429,15 @@ public final class TodoRestController {
             this.jdbcOperations.execute("DROP SEQUENCE if exists " + getSeqPrefix(env, pool) + "_rid;");
             this.jdbcOperations.execute("CREATE SEQUENCE " + getSeqPrefix(env, pool) + "_max MINVALUE 0 NO CYCLE CACHE " + seqCycleCache + " INCREMENT 1 START 1;"); //for append insert
             this.jdbcOperations.execute("CREATE SEQUENCE " + getSeqPrefix(env, pool) + "_rid MINVALUE 0 NO CYCLE CACHE " + seqCycleCache + " INCREMENT 1 START 1;"); //for get value
-
+//            try {
+//                Thread.sleep(30000);
+//            } catch (InterruptedException e) {
+//                throw new RuntimeException(e);
+//            }
+            lockerService.putPool(env, pool);
             return true;
         } catch (DataAccessException e) {
-            System.err.println(e.getMessage());
+            logger.error(e.getMessage());
             return false;
         }
     }
@@ -463,7 +500,4 @@ public final class TodoRestController {
         exp.incRequestsAndLatency(env, pool, "resetseq", null, start);
         return ResponseEntity.ok(new String("Row id sequence has been reseted for pool "+pool));
     }
-
-    
-    
 }

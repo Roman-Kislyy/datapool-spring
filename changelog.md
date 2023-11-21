@@ -6,6 +6,7 @@ Service for creating and utilizing test data pools via REST API.
 ### Changed
 
 - Added details for prometheus logging
+- Disable auto load datapool in BaseLockerService.poolExist
 
 ## [1.7.1]
 

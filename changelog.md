@@ -1,5 +1,10 @@
 # Changelog
 Service for creating and utilizing test data pools via REST API.
+## [1.7.4-wa]
+
+### Changed
+
+- Version for check datapool locked holes
 
 ## [1.7.4]
 

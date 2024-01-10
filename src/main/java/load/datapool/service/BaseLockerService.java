@@ -219,14 +219,14 @@ public class BaseLockerService implements LockerService {
     @Override
     public void add(String env, String pool, int count) {
         pool = tableService.fullName(env, pool);
-        lockers.get(pool).markAsNotEmpty();
+        //lockers.get(pool).markAsNotEmpty();
         lockers.get(pool).add(count);
     }
 
     @Override
     public void lock(String env, String pool, int rid) {
         pool = tableService.fullName(env, pool);
-        jdbcOperations.update("update " + pool + " set locked = true where  rid = ? and locked = false;", rid);
+        jdbcOperations.update("update " + pool + " set locked = true where  rid = ? and locked = false; commit;", rid);
         lockers.get(pool).lock(rid);
     }
 

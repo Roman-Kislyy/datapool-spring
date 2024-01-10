@@ -88,19 +88,25 @@ public class BaseLocker implements Locker {
     }
     @Override
     public boolean isMarkedAsEmpty() {
-        return this.markedAsEmpty;
+        synchronized (this) {
+            return this.markedAsEmpty;
+        }
     }
     @Override
     public void markAsEmpty() {
-        if (this.markedAsEmpty == true) return;
-        logger.warn("{} marked like empty pool.", poolName);
-        this.markedAsEmpty = true;
+        synchronized (this) {
+            if (this.markedAsEmpty == true) return;
+            logger.warn("{} marked like empty pool.", poolName);
+            this.markedAsEmpty = true;
+        }
     }
     @Override
     public void markAsNotEmpty() {
-        if (this.markedAsEmpty == false) return;
-        logger.warn("{} marked like NOT empty pool.", poolName);
-        this.markedAsEmpty = false;
+        synchronized (this) {
+            if (this.markedAsEmpty == false) return;
+            logger.warn("{} marked like NOT empty pool.", poolName);
+            this.markedAsEmpty = false;
+        }
     }
 
 }

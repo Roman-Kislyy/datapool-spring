@@ -191,20 +191,20 @@ public final class TodoRestController {
                 return ResponseEntity.badRequest().body("Lock pool exception for create " + pool);
             }
         }
-
+        lockerService.add(env, pool);
         try {
             if (searchKey.equals("")) {//No
-                this.jdbcOperations.update("insert into " + env + "." + pool + "(rid, text, locked) values (nextval (?),?,?);", getSeqPrefix(env, pool) + "_max", text, false);
+                this.jdbcOperations.update("insert into " + env + "." + pool + "(rid, text, locked) values (nextval (?),?,?); commit;", getSeqPrefix(env, pool) + "_max", text, false);
             } else {
-                this.jdbcOperations.update("insert into " + env + "." + pool + "(rid, text, searchkey, locked) values (nextval (?),?,?,?);", getSeqPrefix(env, pool) + "_max", text, searchKey, false);
+                this.jdbcOperations.update("insert into " + env + "." + pool + "(rid, text, searchkey, locked) values (nextval (?),?,?,?);commit;", getSeqPrefix(env, pool) + "_max", text, searchKey, false);
             }
         } catch (Exception e) {
             logger.error(e.getMessage());
             exp.incRequestsAndLatency(env, pool, "put-value", "Undefined INSERT exception", start);
             return ResponseEntity.badRequest().body(e.getMessage());
         }
-        lockerService.add(env, pool);
         exp.incRequestsAndLatency(env, pool, "put-value", null, start);
+        lockerService.markAsNotEmpty(env, pool);
         return ResponseEntity.ok(new String((long) 1 + " Inserted:" + "locked = false; searchKey = " + searchKey));
     }
 
@@ -371,6 +371,7 @@ public final class TodoRestController {
                 lockerService.putPool(env, pool, successCnt);
             }else{
                 lockerService.add(env, pool, successCnt);
+                lockerService.markAsNotEmpty(env, pool);
             }
 
             if (!notValidRows.equals("")) {

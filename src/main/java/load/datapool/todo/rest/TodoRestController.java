@@ -83,6 +83,7 @@ public final class TodoRestController {
             if (restartPoolLock.tryLock()) {
                 if (fixSequenceState(env, pool, sq)) {
                     logger.info("Sequence reseted for " + fullPoolName + " was value = " + sq);
+//                    lockerService.lock(env, pool, sq.intValue()); // If wrong sequence, then need to lock this rid
                     exp.incRequestsAndLatency(env, pool, "get-next-value", "Sequence reseted", start);
                 } else {
                     restartPoolLock.unlock();
@@ -113,7 +114,6 @@ public final class TodoRestController {
     private boolean fixSequenceState(String env, String pool, Long currentValue) {
         if (currentValue < 0) return false; //Some undefined sequence error
         try {
-            lockerService.lock(env, pool, currentValue.intValue()); // If wrong sequence, then need to lock this rid
             int sqMax = lockerService.firstBiggerUnlockedId(env, pool, currentValue.intValue());
             Long newSqValue = 0L;
             if (sqMax == 0) //Need reset sequence to start, no values forward
@@ -191,19 +191,20 @@ public final class TodoRestController {
                 return ResponseEntity.badRequest().body("Lock pool exception for create " + pool);
             }
         }
-
-        try {
-            if (searchKey.equals("")) {//No
-                this.jdbcOperations.update("insert into " + env + "." + pool + "(rid, text, locked) values (nextval (?),?,?);", getSeqPrefix(env, pool) + "_max", text, false);
-            } else {
-                this.jdbcOperations.update("insert into " + env + "." + pool + "(rid, text, searchkey, locked) values (nextval (?),?,?,?);", getSeqPrefix(env, pool) + "_max", text, searchKey, false);
+        synchronized (lockerService.getLocker(env, pool)) {
+            try {
+                if (searchKey.equals("")) {//No
+                    this.jdbcOperations.update("insert into " + env + "." + pool + "(rid, text, locked) values (nextval (?),?,?);", getSeqPrefix(env, pool) + "_max", text, false);
+                } else {
+                    this.jdbcOperations.update("insert into " + env + "." + pool + "(rid, text, searchkey, locked) values (nextval (?),?,?,?);", getSeqPrefix(env, pool) + "_max", text, searchKey, false);
+                }
+            } catch (Exception e) {
+                logger.error(e.getMessage());
+                exp.incRequestsAndLatency(env, pool, "put-value", "Undefined INSERT exception", start);
+                return ResponseEntity.badRequest().body(e.getMessage());
             }
-        } catch (Exception e) {
-            logger.error(e.getMessage());
-            exp.incRequestsAndLatency(env, pool, "put-value", "Undefined INSERT exception", start);
-            return ResponseEntity.badRequest().body(e.getMessage());
+            lockerService.add(env, pool);
         }
-        lockerService.add(env, pool);
         exp.incRequestsAndLatency(env, pool, "put-value", null, start);
         return ResponseEntity.ok(new String((long) 1 + " Inserted:" + "locked = false; searchKey = " + searchKey));
     }

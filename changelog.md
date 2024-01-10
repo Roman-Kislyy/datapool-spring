@@ -1,6 +1,12 @@
 # Changelog
 Service for creating and utilizing test data pools via REST API.
 
+## [1.7.5]
+
+### Changed
+
+- Checking unlocked rows when frequent puts & gets
+
 ## [1.7.4]
 
 ### Changed

@@ -32,35 +32,35 @@ public class BaseLocker implements Locker {
     }
 
     @Override
-    public void add() {
+    public synchronized void add() {
         add(1);
     }
-    public void add(int count) {
+    public synchronized  void add(int count) {
         size += count;
         if (size >= list.length) {
             list = Arrays.copyOf(list, size+bufferSize);
         }
     }
     @Override
-    public void lock(int id) {
+    public synchronized  void lock(int id) {
         if (id >= list.length) return; // Some collision
         id-= startIndex;
         list[id] = true;
     }
 
     @Override
-    public void unlock(int id) {
+    public synchronized  void unlock(int id) {
         id-= startIndex;
         list[id] = false;
     }
 
     @Override
-    public void unlockAll() {
+    public synchronized void unlockAll() {
         Arrays.fill(list, false);
     }
 
     @Override
-    public int firstUnlockId() {
+    public synchronized int firstUnlockId() {
         logger.debug("Pool {}: size = {}", size);
         for (int i = 0; i < size; i++) {
             if (!list[i]) {     // not locked
@@ -73,7 +73,7 @@ public class BaseLocker implements Locker {
     }
 
     @Override
-    public int firstBiggerUnlockedId(int id) {
+    public synchronized int firstBiggerUnlockedId(int id) {
         logger.debug("Pool {}: id = {}, startIndex = {}, size = {}", getPoolName(), id, startIndex, size);
         id-= startIndex;
         if (id >= size) return 0;   // not exist
@@ -87,17 +87,17 @@ public class BaseLocker implements Locker {
         return 0;
     }
     @Override
-    public boolean isMarkedAsEmpty() {
+    public synchronized boolean isMarkedAsEmpty() {
         return this.markedAsEmpty;
     }
     @Override
-    public void markAsEmpty() {
+    public synchronized void markAsEmpty() {
         if (this.markedAsEmpty == true) return;
         logger.warn("{} marked like empty pool.", poolName);
         this.markedAsEmpty = true;
     }
     @Override
-    public void markAsNotEmpty() {
+    public synchronized void markAsNotEmpty() {
         if (this.markedAsEmpty == false) return;
         logger.warn("{} marked like NOT empty pool.", poolName);
         this.markedAsEmpty = false;

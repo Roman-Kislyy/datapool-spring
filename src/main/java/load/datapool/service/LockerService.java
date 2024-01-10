@@ -19,4 +19,5 @@ public interface LockerService {
     void markAsEmpty(String env, String pool);
     void markAsNotEmpty(String env, String pool);
 
+    Object getLocker(String env, String pool);
 }

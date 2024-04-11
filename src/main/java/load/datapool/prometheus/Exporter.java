@@ -29,7 +29,7 @@ public class Exporter {
     // Prometheus collectors
     static final CollectorRegistry c = new CollectorRegistry();
     static private String [] labelNames= new String [] {"host", "port", "environment","name"};
-    static private String [] labelNamesExt= new String [] {"host", "port", "environment","name","method"};
+    static private String [] labelNamesExt= new String [] {"host", "port", "environment","name","method", "details"};
 
     static final Gauge availableRows = Gauge.build()
             .name("datapool_available_rows")
@@ -116,14 +116,20 @@ public class Exporter {
         } catch (EmptyResultDataAccessException e){
         }
     }
-    public void increaseRequests(String env, String pool,String method){  //+1 increment got get requests metric
-        requestsCount.labels(new String [] {host,String.valueOf(port),env.toUpperCase(), pool.toUpperCase(), method.toUpperCase() }).inc();
+    public void increaseRequests(String env, String pool, String method, String details){  //+1 increment got get requests metric
+        if (details == null){
+            details = "";
+        }
+        requestsCount.labels(new String [] {host,String.valueOf(port),env.toUpperCase(), pool.toUpperCase(), method.toUpperCase(), details}).inc();
     }
 
-    public void increaseLatency(String env, String pool, String method, Instant start){  //Save response time
+    public void increaseLatency(String env, String pool, String method, String details, Instant start){  //Save response time
         Instant end = Instant.now();
+        if (details == null){
+            details = "";
+        }
         Duration timeElapsed = Duration.between(start, end);
-        latency.labels(new String [] {host,String.valueOf(port),env.toUpperCase(), pool.toUpperCase(), method.toUpperCase() }).inc(timeElapsed.toNanos()/1000 );
+        latency.labels(new String [] {host,String.valueOf(port),env.toUpperCase(), pool.toUpperCase(), method.toUpperCase(), details}).inc(timeElapsed.toNanos()/1000 );
     }
     private int getAvailableRows (String schema, String pool){
         if (!isCalcAVRows) return -1;
@@ -135,5 +141,9 @@ public class Exporter {
         currentOffset.remove(new String [] {host,String.valueOf(port),env.toUpperCase(), pool.toUpperCase()});
 
 
+    }
+    public void incRequestsAndLatency(String env, String pool, String method, String details, Instant start){
+        increaseRequests(env, pool, method, details);
+        increaseLatency(env, pool, method, details, start);
     }
 }

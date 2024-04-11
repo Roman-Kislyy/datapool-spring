@@ -22,13 +22,17 @@ public class BaseLockerService implements LockerService {
     private final H2Template jdbcOperations;
     private final TableService tableService;
     private final int batchRows;
+    private final boolean autoLoadPoolFromDB; // For auto load datapool from DB. For debug issues
 
     @Autowired
     public BaseLockerService(H2Template jdbcOperations, TableService tableService,
-                             @Value("${lockerService.batchRows}") int batchRows) {
+                             @Value("${lockerService.batchRows}") int batchRows,
+                             @Value("${lockerService.autoLoadPoolFromDB:false}") boolean autoLoadPoolFromDB
+                             ) {
         this.jdbcOperations = jdbcOperations;
         this.tableService = tableService;
         this.batchRows = batchRows;
+        this.autoLoadPoolFromDB = autoLoadPoolFromDB;
     }
 
     @PostConstruct
@@ -74,7 +78,6 @@ public class BaseLockerService implements LockerService {
         try {
             if (!containsColumns(schema, tableName))
                 return;
-
             Locker locker;
             Integer maxRid = maxRid(fullTableName);
             if (maxRid == null)
@@ -90,7 +93,7 @@ public class BaseLockerService implements LockerService {
 
             final String selectRids = "SELECT rid FROM " + fullTableName + " WHERE rid > ? AND locked = true limit ?";
             final Object[] args = new Object[]{0, batchRows};
-            final int ridIndex = 1;
+            final int ridIndex = 0;
 
             for (int rows = lockedRows; rows > 0; rows -= batchRows) {
                 List<Integer> rids = jdbcOperations.queryForList(selectRids, args, Integer.class);
@@ -124,7 +127,7 @@ public class BaseLockerService implements LockerService {
         Integer lockedColNum = jdbcOperations.queryForObject(selectColumns, args, Integer.class);
         boolean contain = lockedColNum != null && lockedColNum > 0;
         if (!contain)
-            logger.error("Table " + tableService.fullName(schema, tableName) + "not contain " + column + " column");
+            logger.error("Table " + tableService.fullName(schema, tableName) + " not contain " + column + " column");
         return contain;
     }
 
@@ -144,25 +147,32 @@ public class BaseLockerService implements LockerService {
         if (lockers.get(tableService.fullName(env, pool)) != null){
             return true;
         }
-        final int trueNum = 1;
-        AtomicInteger exist = new AtomicInteger(0);
-        try {
-            showSchemas().forEach(schema -> {
-                if (!schema.equalsIgnoreCase(env))
-                    return;
-                selectTables(schema).forEach(tableName -> {
-                    if (tableName.equalsIgnoreCase(pool))
-                        exist.set(trueNum);
+// При пересоздании пула под нагрузкой, возникает коллизия (таблица и сиквенсы еще создаются, а потоки уже пытаются загрузить в приложение этот пул)
+        synchronized (this) {
+            final int trueNum = 1;
+            AtomicInteger exist = new AtomicInteger(0);
+            try {
+                showSchemas().forEach(schema -> {
+                    if (!schema.equalsIgnoreCase(env))
+                        return;
+                    selectTables(schema).forEach(tableName -> {
+                        if (tableName.equalsIgnoreCase(pool))
+                            exist.set(trueNum);
+                    });
                 });
-            });
-        } catch (Exception e) {
-            e.printStackTrace();
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+            if (exist.get() == 1) { //IF there is pool in db, but there is not in lockers
+                if (autoLoadPoolFromDB){
+                    selectLocksFromTable(env, pool); //Load locks
+                    logger.warn("{} was auto loaded from DB. Check DB structure and app lockers cache.", tableService.fullName(env, pool));
+                }
+                logger.warn("{} is presented in database, but is absent in application cache.", tableService.fullName(env, pool));
+            }
+            //return exist.get() == trueNum;
         }
-        if (exist.get() == 1){ //IF there is pool in db, but there is not in lockers
-            selectLocksFromTable(env, pool); //Load locks
-            logger.warn("{} was addition loaded. Check DB structure and app lockers cache.", tableService.fullName(env, pool));
-        }
-        return exist.get() == trueNum;
+        return false;
     }
 
     @Override
@@ -181,6 +191,12 @@ public class BaseLockerService implements LockerService {
     public void markAsNotEmpty(String env, String pool) {
         pool = tableService.fullName(env, pool);
         lockers.get(pool).markAsNotEmpty();
+    }
+
+    @Override
+    public Object getLocker(String env, String pool) {
+        pool = tableService.fullName(env, pool);
+        return lockers.get(pool);
     }
 
     @Override
@@ -209,40 +225,51 @@ public class BaseLockerService implements LockerService {
     @Override
     public void add(String env, String pool, int count) {
         pool = tableService.fullName(env, pool);
-        lockers.get(pool).markAsNotEmpty();
-        lockers.get(pool).add(count);
+        synchronized (lockers.get(pool)) {
+            lockers.get(pool).add(count);
+            lockers.get(pool).markAsNotEmpty();
+        }
     }
 
     @Override
     public void lock(String env, String pool, int rid) {
+
         pool = tableService.fullName(env, pool);
-        jdbcOperations.update("update " + pool + " set locked = true where  rid = ? and locked = false;", rid);
-        lockers.get(pool).lock(rid);
+        synchronized (lockers.get(pool)) {
+            jdbcOperations.update("update " + pool + " set locked = true where  rid = ? and locked = false;", rid);
+            lockers.get(pool).lock(rid);
+        }
     }
 
     @Override
     public void unlock(String env, String pool, int rid) {
         pool = tableService.fullName(env, pool);
-        jdbcOperations.update("update " + pool + " set locked = false where rid = ?", rid);
-        lockers.get(pool).unlock(rid);
-        lockers.get(pool).markAsNotEmpty();
+        synchronized (lockers.get(pool)) {
+            jdbcOperations.update("update " + pool + " set locked = false where rid = ?", rid);
+            lockers.get(pool).unlock(rid);
+            lockers.get(pool).markAsNotEmpty();
+        }
     }
 
     @Override
     public void unlock(String env, String pool, String searchKey) {
         pool = tableService.fullName(env, pool);
-        jdbcOperations.update("update " + pool + " set locked = false where searchkey = ?", searchKey);
-        Integer rid = jdbcOperations.queryForObject("SELECT rid FROM " + pool + " WHERE searchkey = ? limit 1", Integer.class, searchKey);
-        if (rid != null) lockers.get(pool).unlock(rid);
-        lockers.get(pool).markAsNotEmpty();
+        synchronized (lockers.get(pool)) {
+            jdbcOperations.update("update " + pool + " set locked = false where searchkey = ?", searchKey);
+            Integer rid = jdbcOperations.queryForObject("SELECT rid FROM " + pool + " WHERE searchkey = ? limit 1", Integer.class, searchKey);
+            if (rid != null) lockers.get(pool).unlock(rid);
+            lockers.get(pool).markAsNotEmpty();
+        }
     }
 
     @Override
     public void unlockAll(String env, String pool) {
         pool = tableService.fullName(env, pool);
-        jdbcOperations.update("update " + pool + " set locked = false where locked is null; update " + pool + " set locked = false where locked =true;"); //Fast variant
-        lockers.get(pool).unlockAll();
-        lockers.get(pool).markAsNotEmpty();
+        synchronized (lockers.get(pool)) {
+            jdbcOperations.update("update " + pool + " set locked = false where locked is null; update " + pool + " set locked = false where locked =true;"); //Fast variant
+            lockers.get(pool).unlockAll();
+            lockers.get(pool).markAsNotEmpty();
+        }
     }
 
     @Override

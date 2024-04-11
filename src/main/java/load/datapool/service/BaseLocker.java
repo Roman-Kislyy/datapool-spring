@@ -28,39 +28,44 @@ public class BaseLocker implements Locker {
         this.size = size;
         bufferSize = Math.max(bufferSize, size / 10);
         list = new boolean[size + bufferSize];
+        logger.debug("Create locker {poolName}: size = {}, bufferSize = {}, total length = {}", this.poolName, this.size, bufferSize, list.length);
     }
 
     @Override
-    public void add() {
+    public synchronized void add() {
         add(1);
     }
-    public void add(int count) {
+    public synchronized  void add(int count) {
         size += count;
         if (size >= list.length) {
             list = Arrays.copyOf(list, size+bufferSize);
         }
     }
     @Override
-    public void lock(int id) {
+    public synchronized  void lock(int id) {
+        if (id >= list.length) return; // Some collision
         id-= startIndex;
         list[id] = true;
     }
 
     @Override
-    public void unlock(int id) {
+    public synchronized  void unlock(int id) {
         id-= startIndex;
         list[id] = false;
     }
 
     @Override
-    public void unlockAll() {
+    public synchronized void unlockAll() {
         Arrays.fill(list, false);
     }
 
     @Override
-    public int firstUnlockId() {
+    public synchronized int firstUnlockId() {
+        logger.debug("Pool {}: size = {}", size);
         for (int i = 0; i < size; i++) {
             if (!list[i]) {     // not locked
+                logger.debug("Now: {} = {}",i, String.valueOf(list[i]));
+                logger.debug("Next: {} = {}",+ startIndex, String.valueOf(list[+ startIndex]));
                 return i + startIndex;
             }
         }
@@ -68,32 +73,31 @@ public class BaseLocker implements Locker {
     }
 
     @Override
-    public int firstBiggerUnlockedId(int id) {
+    public synchronized int firstBiggerUnlockedId(int id) {
         logger.debug("Pool {}: id = {}, startIndex = {}, size = {}", getPoolName(), id, startIndex, size);
         id-= startIndex;
         if (id >= size) return 0;   // not exist
         for (int i = id; i < size; i++) {
             if (!list[i]) {
-                logger.debug("Now:" + String.valueOf(list[i]));
-                logger.debug("Next: " + String.valueOf(list[i + 1]));
+                logger.debug("Now: {} = {}",i, String.valueOf(list[i]));
+                logger.debug("Next: {} = {}",+ startIndex, String.valueOf(list[+ startIndex]));
                 return i + startIndex;
             }
         }
         return 0;
     }
-
     @Override
-    public boolean isMarkedAsEmpty() {
+    public synchronized boolean isMarkedAsEmpty() {
         return this.markedAsEmpty;
     }
     @Override
-    public void markAsEmpty() {
+    public synchronized void markAsEmpty() {
         if (this.markedAsEmpty == true) return;
         logger.warn("{} marked like empty pool.", poolName);
         this.markedAsEmpty = true;
     }
     @Override
-    public void markAsNotEmpty() {
+    public synchronized void markAsNotEmpty() {
         if (this.markedAsEmpty == false) return;
         logger.warn("{} marked like NOT empty pool.", poolName);
         this.markedAsEmpty = false;

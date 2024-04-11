@@ -1,6 +1,32 @@
 # Changelog
 Service for creating and utilizing test data pools via REST API.
 
+## [1.7.5]
+
+### Changed
+
+- Checking unlocked rows when frequent puts & gets
+
+## [1.7.4]
+
+### Changed
+
+- Mute deadlock when happens DB and application cache collision
+
+## [1.7.3]
+
+### Changed
+
+- Fix incorrect load big locked datapool
+
+## [1.7.2]
+
+### Changed
+
+- Added details for prometheus logging
+- Disable auto load datapool in BaseLockerService.poolExist
+- Add mutex in /put-value when creating new datapool
+
 ## [1.7.1]
 
 ### Changed

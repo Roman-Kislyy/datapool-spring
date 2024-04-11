@@ -12,7 +12,7 @@
 
     <groupId>load.datapool</groupId>
     <artifactId>datapool-service</artifactId>
-    <version>1.7.1</version>
+    <version>1.7.5</version>
     <packaging>jar</packaging>
     <name>datapool-service</name>
     <description>Datapool service </description>
@@ -57,6 +57,7 @@
             <groupId>com.h2database</groupId>
             <artifactId>h2</artifactId>
             <scope>runtime</scope>
+            <version>1.4.197</version>
         </dependency>
         <dependency>
             <groupId>com.opencsv</groupId>

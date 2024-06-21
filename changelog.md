@@ -1,6 +1,13 @@
 # Changelog
 Service for creating and utilizing test data pools via REST API.
 
+## [1.7.6]
+
+### Added
+
+- Create viewer database user for web console http://<host:port>/h2-console/login.do
+- Make parameter db.maxTextColumnLength into application.properties
+
 ## [1.7.5]
 
 ### Changed

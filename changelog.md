@@ -1,6 +1,13 @@
 # Changelog
 Service for creating and utilizing test data pools via REST API.
 
+
+## [1.7.7-alfa]
+
+### Added
+
+- Create api method for download datapool content/api/v2/download/csv for debug version
+
 ## [1.7.6]
 
 ### Added

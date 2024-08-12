@@ -26,6 +26,7 @@
             <li><a href="#Unlock">Разблокировка записи</a></li>
             <li><a href="#Delete">Удаление пула</a></li>
             <li><a href="#ResetSeq">Начать читать пул сначала</a></li>
+            <li><a href="#Download">Скачать пул</a></li>
 
 
         </ul>
@@ -160,6 +161,7 @@
     <p>Запрос - <em><code>curl -XPOST <a href="http://localhost:8080/api/v1/unlock?pool=demo_put_clients&amp;search-key=appSequense10">"http://localhost:8080/api/v1/unlock?pool=demo_put_clients&search-key=appSequense10"</a></code></em></p>
     <p>Ответ - <code>Unlock successfully!</code></p>
 </blockquote>
+
 <h2><a id="Delete"></a>Удаление пула</h2>
 <p>Метод /drop-pool удаляет пул из БД.</p>
 <p>Пример использования:</p>
@@ -175,6 +177,31 @@
     <p>Запрос: <em><code>curl -X GET <a href="http://localhost:8080/api/v1/resetseq?env=load&amp;pool=demo_clients">"http://localhost:8080/api/v1/resetseq?env=load&pool=demo_clients"</a></code></em></p>
 </blockquote>
 
+<h2><a id="Download"></a>Скачивание пула обратно в CSV</h2>
+<p>Метод /download/csv скачивает содержимое из датапула в CSV-файл.</p>
+<p><b>!!! Сильно влияет на прозводительность, не запускайте в ходе теста.</b></p>
+<p>По-умолчанию, количество скачиваемых строк <b>ограничено 500 000.</b></p>
+<p>
+<p>Параметры:</p>
+<blockquote>
+    <li>pool - (обязательный) имя пула для скачивания</li>
+    <li>env - (не обязательный, default = env) имя тестовой среды</li>
+    <li>delimiter - (не обязательный, default = ,) какой разделитель будет в результирующем файле</li>
+    <li>all_columns - (не обязательный, default = false) если установить true, то будут скачиваться заголовки rid, text, searchkey, locked. По умолчанию только text</li>
+    <li>offset - (не обязательный, default = 0). 0 - значит скачиваем пул с начала и до ограничения (500 000). Если нужно продолжить скачивание строк с rid >= 1 000 000, то передайте offset=1000000</li>
+</blockquote>
+<p>Пример использования:</p>
+<blockquote>
+    <p>Так скачается пул с 0 позиции - <em><code>curl  <a href="http://localhost:8080/api/v1/download/csv?pool=big_clients">"http://localhost:8080/api/v1/download/csv?pool=big_clients"</a> > big_clients.csv</code></em></p>
+    <p>А так скачается часть пула с 600000 позиции вместе с полями rid, locked, а разделтелем будет ";" :<p><em><code>curl  <a href="http://localhost:8080/api/v1/download/csv?pool=big_clients&amp;offset=600000&amp;all_columns=true&amp;delimiter=;">"http://localhost:8080/api/v1/download/csv?pool=big_clients&offset=600000&all_columns=true&delimiter=;"</a> > big_clients.csv</code></em></p>
+
+    <p>Результат будет в файле <em><code>big_clients.csv</code></em></p>
+</blockquote>
+<p>Обработка ошибок:</p>
+<blockquote>
+    <p>Если в таблице (в пуле) в поле text лежат не корректные JSON по структуре, вы увидите в результирующем файле заголовок <em><code>raw_text</code></em>, это придется обработать файл руками.</p>
+    <p>Если JSON валидные, но названия и количество атрибутов в них разное, то может съехать структура в полученном файле.</p>
+</blockquote>
 <h2><a id="JMXExample"></a>Пример использования в тест-плане Jmeter</h2>
 <p>Текущий пример в файле &lt;repo&gt;\src\test\test.jmx</p>
 <p>Версия jmx предварительная и будет улучшена.</p>

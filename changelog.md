@@ -1,6 +1,26 @@
 # Changelog
 Service for creating and utilizing test data pools via REST API.
 
+## [1.7.8]
+
+### Added
+
+- Optimization of method for download datapool content/api/v2/download/csv
+- New URL connection options
+
+## [1.7.7-alfa]
+
+### Added
+
+- Create api method for download datapool content/api/v2/download/csv for debug version
+
+## [1.7.6]
+
+### Added
+
+- Create viewer database user for web console http://<host:port>/h2-console/login.do
+- Make parameter db.maxTextColumnLength into application.properties
+
 ## [1.7.5]
 
 ### Changed

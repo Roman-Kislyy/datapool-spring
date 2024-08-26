@@ -6,6 +6,7 @@ import load.datapool.service.LockerService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.http.ResponseEntity;
@@ -34,7 +35,15 @@ public final class TodoRestController {
     private int maxTableNameLength = 16;
     private int maxSequenceLength = 25;
     private int maxIndexLength = 25;
-    private int maxKeyColumnLength = 1500;
+    @Value("${db.maxKeyColumnLength:1500}")
+    private int maxKeyColumnLength;
+    @Value("${db.maxTextColumnLength:32000}")
+    private int maxTextColumnLength;
+    //УЗ с правами на просмотр
+    @Value("${db.viewer.username:viewer}")
+    private String viewerName;
+    @Value("${db.viewer.password:viewer}")
+    private String viewerPassword;
     private int maxLengthNotValidRows = 25000;//Max length wrong lines for response
     private int retryGetNextMaxCount = 999999;
     private int seqCycleCache = 5;
@@ -415,12 +424,15 @@ public final class TodoRestController {
             return true;
         }
         try {
-        	this.jdbcOperations.execute("create schema if not exists "+env+";");
+        	this.jdbcOperations.execute("create schema if not exists " + env + ";");
+            this.jdbcOperations.execute("" +
+                    "CREATE USER IF NOT EXISTS " + viewerName + " PASSWORD '" + viewerPassword + "';\n" +
+                    "GRANT SELECT ON SCHEMA  " + env + " TO " + viewerName + ";");
             this.jdbcOperations.execute("" +
                     "create table " + env + "." + pool +
                     "(" +
                     "        rid           bigint primary key," +
-                    "        text        varchar(32000)," +
+                    "        text        varchar(" + maxTextColumnLength + ")," +
                     "        searchkey        varchar(" + maxKeyColumnLength + ")," +
                     "        locked         boolean   not null default false" +
                     ");");

@@ -1,2 +1,2 @@
 cd ./bin
-java -jar datapool-service-1.6.2.jar -Dprops.tmppath=$PWD > datapool.log - Xmx1024m &
+java -Xmx2G -jar datapool-service-1.7.8.jar -Dprops.tmppath=$PWD > datapool.log &
